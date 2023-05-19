@@ -1,5 +1,10 @@
+# Project Specific
 /cmake-build-*
 /bin
+*.xml
+
+# macOS
+*.DS_Store
 
 # Prerequisites
 *.d
