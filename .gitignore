@@ -2,6 +2,7 @@
 /cmake-build-*
 /bin
 *.xml
+*.spv
 
 # macOS
 *.DS_Store
