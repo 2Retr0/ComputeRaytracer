@@ -15,7 +15,7 @@
 #pragma once
 
 // Dependencies
-#include "../detail/qualifier.hpp"
+#include "glm/detail/qualifier.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	pragma message("GLM: GLM_EXT_scalar_relational extension included")
@@ -23,6 +23,9 @@
 
 namespace glm
 {
+	/// @addtogroup ext_scalar_relational
+	/// @{
+
 	/// Returns the component-wise comparison of |x - y| < epsilon.
 	/// True if this expression is satisfied.
 	///

@@ -125,8 +125,8 @@ namespace glm
 		mat<4, 4, T, defaultp> Result(0);
 		Result[0][0] = (static_cast<T>(2) * nearVal) / (right - left);
 		Result[1][1] = (static_cast<T>(2) * nearVal) / (top - bottom);
-		Result[2][0] = (right + left) / (right - left);
-		Result[2][1] = (top + bottom) / (top - bottom);
+		Result[2][0] = -(right + left) / (right - left);
+		Result[2][1] = -(top + bottom) / (top - bottom);
 		Result[2][2] = farVal / (farVal - nearVal);
 		Result[2][3] = static_cast<T>(1);
 		Result[3][2] = -(farVal * nearVal) / (farVal - nearVal);
@@ -139,8 +139,8 @@ namespace glm
 		mat<4, 4, T, defaultp> Result(0);
 		Result[0][0] = (static_cast<T>(2) * nearVal) / (right - left);
 		Result[1][1] = (static_cast<T>(2) * nearVal) / (top - bottom);
-		Result[2][0] = (right + left) / (right - left);
-		Result[2][1] = (top + bottom) / (top - bottom);
+		Result[2][0] = -(right + left) / (right - left);
+		Result[2][1] = -(top + bottom) / (top - bottom);
 		Result[2][2] = (farVal + nearVal) / (farVal - nearVal);
 		Result[2][3] = static_cast<T>(1);
 		Result[3][2] = - (static_cast<T>(2) * farVal * nearVal) / (farVal - nearVal);
@@ -473,11 +473,11 @@ namespace glm
 	{
 #		if GLM_CONFIG_CLIP_CONTROL == GLM_CLIP_CONTROL_LH_ZO
 			return perspectiveFovLH_ZO(fov, width, height, zNear, zFar);
-		elif GLM_CONFIG_CLIP_CONTROL == GLM_CLIP_CONTROL_LH_NO
+#		elif GLM_CONFIG_CLIP_CONTROL == GLM_CLIP_CONTROL_LH_NO
 			return perspectiveFovLH_NO(fov, width, height, zNear, zFar);
-		elif GLM_CONFIG_CLIP_CONTROL == GLM_CLIP_CONTROL_RH_ZO
+#		elif GLM_CONFIG_CLIP_CONTROL == GLM_CLIP_CONTROL_RH_ZO
 			return perspectiveFovRH_ZO(fov, width, height, zNear, zFar);
-		elif GLM_CONFIG_CLIP_CONTROL == GLM_CLIP_CONTROL_RH_NO
+#		elif GLM_CONFIG_CLIP_CONTROL == GLM_CLIP_CONTROL_RH_NO
 			return perspectiveFovRH_NO(fov, width, height, zNear, zFar);
 #		endif
 	}

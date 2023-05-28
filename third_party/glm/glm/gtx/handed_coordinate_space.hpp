@@ -6,14 +6,14 @@
 /// @defgroup gtx_handed_coordinate_space GLM_GTX_handed_coordinate_space
 /// @ingroup gtx
 ///
-/// Include <glm/gtx/handed_coordinate_system.hpp> to use the features of this extension.
+/// Include <glm/gtx/handed_coordinate_space.hpp> to use the features of this extension.
 ///
 /// To know if a set of three basis vectors defines a right or left-handed coordinate system.
 
 #pragma once
 
 // Dependency:
-#include "../glm.hpp"
+#include "glm/glm.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	ifndef GLM_ENABLE_EXPERIMENTAL

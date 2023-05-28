@@ -3,18 +3,21 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
 
-// --- other includes ---
 #include <vk_types.h>
 #include <vk_initializers.h>
-
-// Bootstrap library
-#include "VkBootstrap.h"
-#include "VkBootstrapDispatch.h"
-
+#include <vk_mesh.h>
+#include <glm/glm.hpp>
+#include <glm/gtx/transform.hpp>
 #include <iostream>
 #include <fstream>
 
-// We want to immediately abort when there is an error. In normal engines this would give an error message to the
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
+#include "VkBootstrap.h"
+#include "VkBootstrapDispatch.h"
+
+// We want to immediately abort when there is an error. In normal engines, this would give an error message to the
 // user, or perform a dump of state.
 using namespace std;
 #define VK_CHECK(x)                                                       \
@@ -38,14 +41,15 @@ public:
     // This is a basic set of required Vulkan structs for pipeline creation, there are more, but for now these are the
     // ones we will need to fill for now.
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    VkPipelineVertexInputStateCreateInfo         vertexInputInfo;
-    VkPipelineInputAssemblyStateCreateInfo       inputAssembly;
-    VkViewport                                   viewport;
-    VkRect2D                                     scissor;
-    VkPipelineRasterizationStateCreateInfo       rasterizer;
-    VkPipelineColorBlendAttachmentState          colorBlendAttachment;
-    VkPipelineMultisampleStateCreateInfo         multisampling;
-    VkPipelineLayout                             pipelineLayout;
+    VkPipelineVertexInputStateCreateInfo         vertexInputInfo{};
+    VkPipelineInputAssemblyStateCreateInfo       inputAssembly{};
+    VkViewport                                   viewport{};
+    VkRect2D                                     scissor{};
+    VkPipelineRasterizationStateCreateInfo       rasterizer{};
+    VkPipelineColorBlendAttachmentState          colorBlendAttachment{};
+    VkPipelineMultisampleStateCreateInfo         multisampling{};
+    VkPipelineLayout                             pipelineLayout{};
+    VkPipelineDepthStencilStateCreateInfo        depthStencil{};
 
     VkPipeline build_pipeline(VkDevice device, VkRenderPass renderpass);
 };
@@ -86,6 +90,7 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass renderp
             .pViewportState = &viewportState,
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
+            .pDepthStencilState = &depthStencil,
             .pColorBlendState = &colorBlending,
             .layout = pipelineLayout,
             .renderPass = renderpass,
@@ -103,6 +108,12 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass renderp
 }
 
 
+struct MeshPushConstants {
+    glm::vec4 data;
+    glm::mat4 renderMatrix;
+};
+
+
 class VulkanEngine {
 public:
     // Initializes everything in the engine.
@@ -114,9 +125,8 @@ public:
     // Draw loop.
     void draw();
 
-    // Run main loop.
+    // Run the main loop.
     void run();
-
 
 public:
     // --- Window ---
@@ -145,16 +155,29 @@ public:
     VkCommandBuffer mainCommandBuffer;   // The buffer we will record into.
 
     // --- Renderpass ---
-    VkRenderPass               renderPass;
+    VkRenderPass               renderpass;
     std::vector<VkFramebuffer> framebuffers;
+    VkImageView                depthImageView;
+    AllocatedImage             depthImage;
+    VkFormat                   depthFormat;    // The format for the depth image.
 
     // --- Structure Synchronization ---
     VkSemaphore presentSemaphore, renderSemaphore;
     VkFence     renderFence;
 
     // --- Pipeline ---
+    int              selectedShader {0};
     VkPipelineLayout trianglePipelineLayout;
     VkPipeline       trianglePipeline;
+    VkPipeline       redTrianglePipeline;
+    VkPipelineLayout meshPipelineLayout;
+    VkPipeline       meshPipeline;
+    DeletionQueue    mainDeletionQueue;
+
+    // --- Memory ---
+    VmaAllocator allocator;
+    Mesh         triangleMesh;
+    Mesh         monkeyMesh;
 
 private:
     void init_vulkan();
@@ -170,7 +193,11 @@ private:
     void init_sync_structures();
 
     // Loads a shader module from a spir-v file. Returns false if it errors
-    bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
+    bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule) const;
+
+    void load_meshes();
+
+    void upload_mesh(Mesh& mesh);
 
     void init_pipelines();
 };
@@ -199,6 +226,7 @@ void VulkanEngine::init() {
     init_framebuffers();
     init_sync_structures();
     init_pipelines();
+    load_meshes();
 
     // Everything went fine!
     isInitialized = true;
@@ -241,6 +269,14 @@ void VulkanEngine::init_vulkan() {
     // --- Grabbing Queues ---
     graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
+
+    // --- Initialize Memory Allocator ---
+    VmaAllocatorCreateInfo allocatorInfo = {
+            .physicalDevice = chosenGPU,
+            .device = device,
+            .instance = instance,
+    };
+    vmaCreateAllocator(&allocatorInfo, &allocator);
 }
 
 
@@ -265,6 +301,33 @@ void VulkanEngine::init_swapchain() {
     swapchainImages = vkbSwapchain.get_images().value();
     swapchainImageViews = vkbSwapchain.get_image_views().value();
     swapchainImageFormat = vkbSwapchain.image_format;
+
+    mainDeletionQueue.push([this]() { vkDestroySwapchainKHR(device, swapchain, nullptr); });
+
+    // --- Depth Image ---
+    VkExtent3D depthImageExtent = { windowExtent.width, windowExtent.height, 1 }; // Depth image size matches window
+
+    depthFormat = VK_FORMAT_D32_SFLOAT; // Hard-coding depth format to 32-bit float (most GPUs support it).
+    // The depth image will be an image with the format we selected and Depth Attachment usage flag
+    auto depthImageInfo = vkinit::image_create_info(depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
+
+    // For the depth image, we want to allocate it from GPU local memory
+    VmaAllocationCreateInfo depthImageAllocationInfo = {
+            .usage = VMA_MEMORY_USAGE_GPU_ONLY,                                          // Ensures image is allocated on VRAM.
+            .requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT), // Forces VMA to allocate on VRAM.
+    };
+
+    // Allocate and create the image
+    vmaCreateImage(allocator, &depthImageInfo, &depthImageAllocationInfo, &depthImage.image, &depthImage.allocation, nullptr);
+
+    // Build an image-view for the depth image to use for rendering
+    auto depthViewInfo = vkinit::imageview_create_info(depthFormat, depthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
+    VK_CHECK(vkCreateImageView(device, &depthViewInfo, nullptr, &depthImageView));
+
+    mainDeletionQueue.push([this]() {
+        vkDestroyImageView(device, depthImageView, nullptr);
+        vmaDestroyImage(allocator, depthImage.image, depthImage.allocation);
+    });
 }
 
 
@@ -277,6 +340,8 @@ void VulkanEngine::init_commands() {
     // Allocate the other default command buffer that we will use for rendering.
     auto commandAllocateInfo = vkinit::command_buffer_allocate_info(commandPool, 1);
     VK_CHECK(vkAllocateCommandBuffers(device, &commandAllocateInfo, &mainCommandBuffer));
+
+    mainDeletionQueue.push([this]() { vkDestroyCommandPool(device, commandPool, nullptr); });
 }
 
 
@@ -302,27 +367,72 @@ void VulkanEngine::init_default_renderpass() {
             .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
+    VkAttachmentDescription depthAttachment = {
+            .flags = 0,
+            .format = depthFormat,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
+    VkAttachmentReference depthAttachmentReference = {
+            .attachment = 1,
+            .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
     // We are going to create 1 subpass (the minimum amount possible)
     VkSubpassDescription subpass = {
             .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
             .colorAttachmentCount = 1,
-            .pColorAttachments = &colorAttachmentReference,
+            .pColorAttachments = &colorAttachmentReference,       // Hook the color attachment into the subpass
+            .pDepthStencilAttachment = &depthAttachmentReference, // Hook the depth attachment into the subpass
+    };
+
+    VkSubpassDependency colorDependency = {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+    };
+
+    // We need to make sure that one frame cannot override a depth buffer while a previous frame is still rendering to
+    // it. This dependency tells Vulkan that the depth attachment in a renderpass cannot be used before previous
+    // renderpasses have finished using it.
+    VkSubpassDependency depthDependency = {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     };
 
     // The image life will go something like this:
     //   * <undefined> -> renderpass begins -> sub-pass 0 begins (transition to attachment optimal)
     //                 -> sub-pass 0 renders -> sub-pass 0 ends
     //                 -> renderpass ends (transition to present source)
+    VkAttachmentDescription attachments[2] = { colorAttachment, depthAttachment };
+    VkSubpassDependency dependencies[2] = { colorDependency, depthDependency };
     // The Vulkan driver will perform the layout transitions for us when using the renderpass. If we weren't using a
     // renderpass (drawing from compute shaders) we would need to do the same transitions explicitly.
     VkRenderPassCreateInfo renderpassInfo = {
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .attachmentCount = 1,
-            .pAttachments = &colorAttachment, // Connect color attachment
+            .attachmentCount = 2,
+            .pAttachments = &attachments[0],
             .subpassCount = 1,
-            .pSubpasses = &subpass,           // Connect subpass
+            .pSubpasses = &subpass,
+            .dependencyCount = 2,
+            .pDependencies = &dependencies[0],
     };
-    VK_CHECK(vkCreateRenderPass(device, &renderpassInfo, nullptr, &renderPass));
+    VK_CHECK(vkCreateRenderPass(device, &renderpassInfo, nullptr, &renderpass));
+
+    mainDeletionQueue.push([this]() { vkDestroyRenderPass(device, renderpass, nullptr); });
 }
 
 
@@ -331,7 +441,7 @@ void VulkanEngine::init_framebuffers() {
     VkFramebufferCreateInfo framebufferInfo = {
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .pNext = nullptr,
-            .renderPass = renderPass,
+            .renderPass = renderpass,
             .attachmentCount = 1,
             .width = windowExtent.width,
             .height = windowExtent.height,
@@ -341,37 +451,48 @@ void VulkanEngine::init_framebuffers() {
     const uint32_t swapchainImageCount = swapchainImages.size();
     framebuffers = std::vector<VkFramebuffer>(swapchainImageCount);
 
-    // Create framebuffers for each of the swapchain image views
+    // Create framebuffers for each of the swapchain image views. We connect the depth image view when creating each of
+    // the framebuffers. We do not need to change the depth image between frames and can just clear and reuse the same
+    // depth image for every.
     for (int i = 0; i < swapchainImageCount; i++) {
-        framebufferInfo.pAttachments = &swapchainImageViews[i];
+        VkImageView attachments[2] = { swapchainImageViews[i], depthImageView };
+        framebufferInfo.attachmentCount = 2;
+        framebufferInfo.pAttachments = attachments;
+
         VK_CHECK(vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffers[i]));
+
+        mainDeletionQueue.push([=, this]() {
+            vkDestroyFramebuffer(device, framebuffers[i], nullptr);
+            vkDestroyImageView(device, swapchainImageViews[i], nullptr);
+        });
     }
 }
 
 
 void VulkanEngine::init_sync_structures() {
     // --- Create Fence ---
-    VkFenceCreateInfo fenceCreateInfo = {
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-            .pNext = nullptr,
-            // We want to create the fence with the `CREATE_SIGNALED` flag, so we can wait on it before using it on a
-            // GPU command (for the first frame)
-            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
-    };
+    // We want to create the fence with the `CREATE_SIGNALED` flag, so we can wait on it before using it on a
+    // GPU command (for the first frame)
+    auto fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
     VK_CHECK(vkCreateFence(device, &fenceCreateInfo, nullptr, &renderFence));
 
+    // Enqueue the destruction of the fence
+    mainDeletionQueue.push([this]() { vkDestroyFence(device, renderFence, nullptr); });
+
     // --- Create Semaphores ---
-    VkSemaphoreCreateInfo semaphoreCreateInfo = {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0, // No flags needed for semaphores
-    };
+    auto semaphoreCreateInfo = vkinit::semaphore_create_info();
     VK_CHECK(vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &presentSemaphore));
     VK_CHECK(vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &renderSemaphore));
+
+    // Enqueue the destruction of semaphores
+    mainDeletionQueue.push([this]() {
+        vkDestroySemaphore(device, presentSemaphore, nullptr);
+        vkDestroySemaphore(device, renderSemaphore, nullptr);
+    });
 }
 
 
-bool VulkanEngine::load_shader_module(const char *filePath, VkShaderModule *outShaderModule) {
+bool VulkanEngine::load_shader_module(const char *filePath, VkShaderModule *outShaderModule) const {
     // Open the file with cursor at the end. We use `std::ios::binary` to open the stream in binary and `std::ios::ate`
     // to open the stream at the end of the file.
     std::ifstream file(filePath, std::ios::ate | std::ios::binary);
@@ -406,33 +527,74 @@ bool VulkanEngine::load_shader_module(const char *filePath, VkShaderModule *outS
 }
 
 
+void VulkanEngine::load_meshes() {
+    triangleMesh.vertices.resize(3);
+
+    triangleMesh.vertices[0].position = { 1.f, 1.f, 0.f };
+    triangleMesh.vertices[1].position = {-1.f, 1.f, 0.f };
+    triangleMesh.vertices[2].position = { 0.f,-1.f, 0.f };
+
+    triangleMesh.vertices[0].color = { 0.f, 1.f, 0.f };
+    triangleMesh.vertices[1].color = { 0.f, 1.f, 0.f };
+    triangleMesh.vertices[2].color = { 0.f, 1.f, 0.f };
+
+    monkeyMesh.load_from_obj("../assets/monkey_smooth.obj");
+
+    // We need to make sure both meshes are sent to the GPU. We don't care about vertex normals.
+    upload_mesh(triangleMesh);
+    upload_mesh(monkeyMesh);
+}
+
+
+void VulkanEngine::upload_mesh(Mesh& mesh) {
+    // Allocate vertex buffer
+    VkBufferCreateInfo bufferInfo = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = mesh.vertices.size() * sizeof(Vertex), // The total size, in bytes, of the buffer to allocate
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,    // Buffer is to be used as vertex buffer
+    };
+
+    // Let the VMA library know that this data should be writable only by CPU, but readable by GPU
+    VmaAllocationCreateInfo vmaAllocInfo = { .usage = VMA_MEMORY_USAGE_CPU_TO_GPU };
+
+    // Allocate the buffer
+    VK_CHECK(vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer, &mesh.vertexBuffer.allocation, nullptr));
+
+    // Add the destruction of the triangle mesh buffer to the deletion queue
+    mainDeletionQueue.push([=, this]() {
+        vmaDestroyBuffer(allocator, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
+    });
+
+    // To push data into a VkBuffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
+    // done with writing the data, we can unmap.
+    void* vertexData;
+    vmaMapMemory(allocator, mesh.vertexBuffer.allocation, &vertexData);
+    memcpy(vertexData, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+    vmaUnmapMemory(allocator, mesh.vertexBuffer.allocation);
+}
+
+
 void VulkanEngine::init_pipelines() {
-    // --- Shader Module Loading ---
-    VkShaderModule triangleVertexShader;
-    if (!load_shader_module("../shaders/triangle.vert.spv", &triangleVertexShader))
-        std::cout << "Error when building the triangle vertex shader module" << std::endl;
-    else
-        std::cout << "Triangle vertex shader successfully loaded" << std::endl;
-
-    VkShaderModule triangleFragShader;
-    if (!load_shader_module("../shaders/triangle.frag.spv", &triangleFragShader))
-        std::cout << "Error when building the triangle fragment shader module" << std::endl;
-    else
-        std::cout << "Triangle fragment shader successfully loaded" << std::endl;
-
     // --- Pipeline Layout ---
     // Build the pipeline layout that controls the inputs/outputs of the shader.
     // We are not using descriptor sets or other systems yet, so no need to use anything other than empty default.
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = vkinit::pipeline_layout_create_info();
-    VK_CHECK(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &trianglePipelineLayout));
+    auto trianglePipelineLayoutInfo = vkinit::pipeline_layout_create_info();
+    VK_CHECK(vkCreatePipelineLayout(device, &trianglePipelineLayoutInfo, nullptr, &trianglePipelineLayout));
+
+    auto meshPipelineLayoutInfo = vkinit::pipeline_layout_create_info();
+    // Setup push constants
+    VkPushConstantRange pushConstant = {
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, // Push constant range is accessible only in the vertex shader
+            .offset = 0,                              // Push constant range starts at the beginning
+            .size = sizeof(MeshPushConstants),        // Push constant range has size of `MeshPushConstants` struct
+    };
+
+    meshPipelineLayoutInfo.pPushConstantRanges = &pushConstant;
+    meshPipelineLayoutInfo.pushConstantRangeCount = 1;
+    VK_CHECK(vkCreatePipelineLayout(device, &meshPipelineLayoutInfo, nullptr, &meshPipelineLayout));
 
     // --- Pipeline ---
     PipelineBuilder pipelineBuilder;
-    pipelineBuilder.shaderStages.push_back(
-            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, triangleVertexShader));
-    pipelineBuilder.shaderStages.push_back(
-            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, triangleFragShader));
-
     // Vertex input controls how to read vertices from vertex buffers. We aren't using it yet.
     pipelineBuilder.vertexInputInfo = vkinit::vertex_input_state_create_info();
 
@@ -453,17 +615,106 @@ void VulkanEngine::init_pipelines() {
 
     // Configure the rasterizer to draw filled triangles.
     pipelineBuilder.rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-
     // We don't use multisampling, so just run the default one.
     pipelineBuilder.multisampling = vkinit::multisampling_state_create_info();
-
     // We use a single blend attachment with no blending and writing to RGBA.
     pipelineBuilder.colorBlendAttachment = vkinit::color_blend_attachment_state();
-
     // Use the triangle layout we created.
     pipelineBuilder.pipelineLayout = trianglePipelineLayout;
+    // Default depth testing
+    pipelineBuilder.depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
 
-    trianglePipeline = pipelineBuilder.build_pipeline(device, renderPass);
+
+    // --- Red Triangle Shader Module ---
+    VkShaderModule redTriangleVertShader;
+    if (!load_shader_module("../shaders/triangle.vert.spv", &redTriangleVertShader))
+        std::cout << "Error when building the red triangle vertex shader module" << std::endl;
+    else
+        std::cout << "Red Triangle vertex shader successfully loaded" << std::endl;
+
+    VkShaderModule redTriangleFragShader;
+    if (!load_shader_module("../shaders/triangle.frag.spv", &redTriangleFragShader))
+        std::cout << "Error when building the red triangle fragment shader module" << std::endl;
+    else
+        std::cout << "Red Triangle fragment shader successfully loaded" << std::endl;
+
+    pipelineBuilder.shaderStages.push_back(
+            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, redTriangleVertShader));
+    pipelineBuilder.shaderStages.push_back(
+            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, redTriangleFragShader));
+
+    redTrianglePipeline = pipelineBuilder.build_pipeline(device, renderpass);
+
+    // --- Triangle Shader Module ---
+    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+
+    VkShaderModule triangleVertexShader;
+    if (!load_shader_module("../shaders/colored_triangle.vert.spv", &triangleVertexShader))
+        std::cout << "Error when building the triangle vertex shader module" << std::endl;
+    else
+        std::cout << "Triangle vertex shader successfully loaded" << std::endl;
+
+    VkShaderModule triangleFragShader;
+    if (!load_shader_module("../shaders/colored_triangle.frag.spv", &triangleFragShader))
+        std::cout << "Error when building the triangle fragment shader module" << std::endl;
+    else
+        std::cout << "Triangle fragment shader successfully loaded" << std::endl;
+
+    pipelineBuilder.shaderStages.push_back(
+            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, triangleVertexShader));
+    pipelineBuilder.shaderStages.push_back(
+            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, triangleFragShader));
+
+    trianglePipeline = pipelineBuilder.build_pipeline(device, renderpass);
+
+
+    // --- Mesh Pipeline ---
+    auto vertexDescription = Vertex::get_vertex_description();
+
+    // Connect the pipeline builder vertex input info to the one we get from Vertex
+    pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+    pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
+
+    pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+    pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
+
+    // Now our mesh pipeline has the space for the push constants, so we can now execute the command to use them.
+    pipelineBuilder.pipelineLayout = meshPipelineLayout;
+
+    // --- Triangle Mesh Shader Module ---
+    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+
+    VkShaderModule meshVertShader;
+    if (!load_shader_module("../shaders/tri_mesh.vert.spv", &meshVertShader))
+        std::cout << "Error when building the triangle mesh vertex module" << std::endl;
+    else
+        std::cout << "Triangle mesh vertex shader successfully loaded" << std::endl;
+
+    pipelineBuilder.shaderStages.push_back(
+            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
+    pipelineBuilder.shaderStages.push_back(
+            vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, triangleFragShader));
+
+    meshPipeline = pipelineBuilder.build_pipeline(device, renderpass);
+
+    // --- Cleanup ---
+    // Destroy all shader modules, outside the queue
+    vkDestroyShaderModule(device, redTriangleVertShader, nullptr);
+    vkDestroyShaderModule(device, redTriangleFragShader, nullptr);
+    vkDestroyShaderModule(device, triangleFragShader, nullptr);
+    vkDestroyShaderModule(device, triangleVertexShader, nullptr);
+    vkDestroyShaderModule(device, meshVertShader, nullptr);
+
+    mainDeletionQueue.push([this]() {
+        // Destroy the 2 pipelines we have created
+        vkDestroyPipeline(device, redTrianglePipeline, nullptr);
+        vkDestroyPipeline(device, trianglePipeline, nullptr);
+        vkDestroyPipeline(device, meshPipeline, nullptr);
+
+        // Destroy the pipeline layout that they use
+        vkDestroyPipelineLayout(device, trianglePipelineLayout, nullptr);
+        vkDestroyPipelineLayout(device, meshPipelineLayout, nullptr);
+    });
 }
 
 
@@ -473,18 +724,11 @@ void VulkanEngine::cleanup() {
     if (isInitialized) {
         // It is imperative that objects are destroyed in the opposite order that they are created (unless we really
         // know what we are doing)!
-        vkDestroyCommandPool(device, commandPool, nullptr);
-        vkDestroySwapchainKHR(device, swapchain, nullptr);
+        vkWaitForFences(device, 1, &renderFence, true, 1E9);
 
-        // Destroy the main renderpass
-        vkDestroyRenderPass(device, renderPass, nullptr);
+        mainDeletionQueue.flush();
 
-        // Destroy swapchain resources
-        for (int i = 0; i < framebuffers.size(); i++) {
-            vkDestroyFramebuffer(device, framebuffers[i], nullptr);
-            vkDestroyImageView(device, swapchainImageViews[i], nullptr);
-        }
-
+        vmaDestroyAllocator(allocator);
         vkDestroyDevice(device, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkb::destroy_debug_utils_messenger(instance, debugMessenger);
@@ -508,7 +752,7 @@ void VulkanEngine::draw() {
     // Commands have finished execution at this point; we can safely reset the command buffer to begin enqueuing again.
     VK_CHECK(vkResetCommandBuffer(mainCommandBuffer, 0));
 
-    VkCommandBuffer commandBuffer = mainCommandBuffer;
+    auto commandBuffer = mainCommandBuffer;
     // Begin the command buffer recording. As we will use this command buffer exactly once, we want to inform Vulkan
     // to allow for great optimization by the driver.
     VkCommandBufferBeginInfo commandBeginInfo = {
@@ -525,29 +769,74 @@ void VulkanEngine::draw() {
     float flash = abs(sin(static_cast<float>(frameNumber) / 120.0f));
     clearValue.color = { { 0.0f, 0.0f, flash, 1.0f } };
 
+    VkClearValue depthClear;
+    depthClear.depthStencil.depth = 1.0f; // Clear depth at z = 1
+
     // Start the main renderpass. We will use the clear color from above, and the framebuffer of the index the swapchain
     // gave us.
+    VkClearValue clearValues[] = { clearValue, depthClear };
     VkRenderPassBeginInfo renderpassInfo = {
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .pNext = nullptr,
-            .renderPass = renderPass,
+            .renderPass = renderpass,
             .framebuffer = framebuffers[swapchainImageIndex],
-            .clearValueCount = 1,
-            .pClearValues = &clearValue,
+            .clearValueCount = 2,
+            .pClearValues = &clearValues[0],
     };
     renderpassInfo.renderArea.offset.x = 0;
     renderpassInfo.renderArea.offset.y = 0;
     renderpassInfo.renderArea.extent = windowExtent;
     vkCmdBeginRenderPass(commandBuffer, &renderpassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // Once we start adding rendering commands, they will go here.
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline);
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    auto setupViewMatrix = [=, this]() {
+        // --- Object Model-View Matrix ---
+        // Camera position setup
+        glm::vec3 cameraPosition = { 0.f, 0.f,-2.f };
+        auto view = glm::translate(glm::mat4(1.f), cameraPosition);
 
-    // Finalize the renderpass
-    vkCmdEndRenderPass(commandBuffer);
-    // Finalize the command buffer (we can no longer add commands, but the buffer is ready for execution).
-    VK_CHECK(vkEndCommandBuffer(commandBuffer));
+        // Camera projection setup
+        auto projection = glm::perspective(glm::radians(70.f), 1700.f / 900.f, 0.1f, 200.f);
+        projection[1][1] *= -1;
+
+        // Model rotation setup
+        auto model = glm::rotate(glm::mat4(1.f), glm::radians(static_cast<float>(frameNumber) * 0.4f), glm::vec3(0, 1, 0));
+
+        // Calculate final mesh matrix
+        auto meshMatrix = projection * view * model;
+
+        // Upload the matrix to the GPU via push constants
+        MeshPushConstants constants = { .renderMatrix = meshMatrix };
+        return constants;
+    };
+
+    // Once we start adding rendering commands, they will go here.
+    VkDeviceSize offset = 0; // Bind mesh vertex buffers with offset 0
+    MeshPushConstants constants = setupViewMatrix();
+    switch(selectedShader) {
+        case 0:
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, redTrianglePipeline);
+            vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+            break;
+        case 1:
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline);
+            vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+            break;
+        case 2:
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &triangleMesh.vertexBuffer.buffer, &offset);
+            vkCmdPushConstants(commandBuffer, meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
+            vkCmdDraw(commandBuffer, triangleMesh.vertices.size(), 1, 0, 0);
+            break;
+        case 3:
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, &monkeyMesh.vertexBuffer.buffer, &offset);
+            vkCmdPushConstants(commandBuffer, meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
+            vkCmdDraw(commandBuffer, monkeyMesh.vertices.size(), 1, 0, 0);
+            break;
+    }
+
+    vkCmdEndRenderPass(commandBuffer);           // Finalize the renderpass
+    VK_CHECK(vkEndCommandBuffer(commandBuffer)); // Finalize the command buffer for execution--we can no longer add commands.
 
     // Prepare the submission to the queue. We wait on `presentSemaphore`, as it's only signaled when the swapchain is
     // ready. We will then signal `renderSemaphore`, to inform that rendering has finished.
@@ -593,13 +882,14 @@ void VulkanEngine::run() {
         // Handle all events the OS has sent to the application since the last frame.
         while (SDL_PollEvent(&windowEvent) != 0) {
             // Close the window when user presses alt-f4 or the 'x' button.
-            switch(windowEvent.type) {
-                case SDL_QUIT:
-                    shouldQuit = true;
-                    break;
-                case SDL_KEYDOWN:
-                    std::cout << "Key pressed!" << '\n';
-                    break;
+            if (windowEvent.type == SDL_QUIT) {
+                shouldQuit = true;
+            } else if (windowEvent.type == SDL_KEYDOWN) {
+                switch(windowEvent.key.keysym.sym) {
+                    case SDLK_SPACE:
+                        if (++selectedShader > 3) selectedShader = 0;
+                        break;
+                }
             }
         }
         draw();

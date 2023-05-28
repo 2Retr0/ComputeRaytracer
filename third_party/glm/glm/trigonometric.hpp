@@ -18,8 +18,8 @@
 
 #pragma once
 
-#include "detail/setup.hpp"
-#include "detail/qualifier.hpp"
+#include "glm/detail/setup.hpp"
+#include "glm/detail/qualifier.hpp"
 
 namespace glm
 {
@@ -96,7 +96,7 @@ namespace glm
 	template<length_t L, typename T, qualifier Q>
 	GLM_FUNC_DECL vec<L, T, Q> asin(vec<L, T, Q> const& x);
 
-	/// Arc cosine. Returns an angle whose sine is x.
+	/// Arc cosine. Returns an angle whose cosine is x.
 	/// The range of values returned by this function is [0, PI].
 	/// Results are undefined if |x| > 1.
 	///
@@ -207,4 +207,4 @@ namespace glm
 	/// @}
 }//namespace glm
 
-#include "detail/func_trigonometric.inl"
+#include "glm/detail/func_trigonometric.inl"

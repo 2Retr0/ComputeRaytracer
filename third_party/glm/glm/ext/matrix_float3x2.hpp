@@ -2,11 +2,11 @@
 /// @file glm/ext/matrix_float3x2.hpp
 
 #pragma once
-#include "../detail/type_mat3x2.hpp"
+#include "glm/detail/type_mat3x2.hpp"
 
 namespace glm
 {
-	/// @addtogroup core
+	/// @addtogroup core_matrix
 	/// @{
 
 	/// 3 columns of 2 components matrix of single-precision floating-point numbers.

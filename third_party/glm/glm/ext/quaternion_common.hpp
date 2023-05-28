@@ -21,11 +21,11 @@
 #pragma once
 
 // Dependency:
-#include "../ext/scalar_constants.hpp"
-#include "../ext/quaternion_geometric.hpp"
-#include "../common.hpp"
-#include "../trigonometric.hpp"
-#include "../exponential.hpp"
+#include "scalar_constants.hpp"
+#include "quaternion_geometric.hpp"
+#include "glm/common.hpp"
+#include "glm/trigonometric.hpp"
+#include "glm/exponential.hpp"
 #include <limits>
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
@@ -75,6 +75,21 @@ namespace glm
 	/// @tparam Q A value from qualifier enum
 	template<typename T, qualifier Q>
 	GLM_FUNC_DECL qua<T, Q> slerp(qua<T, Q> const& x, qua<T, Q> const& y, T a);
+
+    /// Spherical linear interpolation of two quaternions with multiple spins over rotation axis.
+    /// The interpolation always take the short path when the spin count is positive and long path
+    /// when count is negative. Rotation is performed at constant speed.
+    ///
+    /// @param x A quaternion
+    /// @param y A quaternion
+    /// @param a Interpolation factor. The interpolation is defined beyond the range [0, 1].
+    /// @param k Additional spin count. If Value is negative interpolation will be on "long" path.
+    ///
+    /// @tparam T A floating-point scalar type
+    /// @tparam S An integer scalar type
+    /// @tparam Q A value from qualifier enum
+    template<typename T, typename S, qualifier Q>
+    GLM_FUNC_DECL qua<T, Q> slerp(qua<T, Q> const& x, qua<T, Q> const& y, T a, S k);
 
 	/// Returns the q conjugate.
 	///

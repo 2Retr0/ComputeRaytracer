@@ -8,12 +8,12 @@
 ///
 /// Include <glm/gtx/vector_query.hpp> to use the features of this extension.
 ///
-/// Query informations of vector types
+/// Query information of vector types
 
 #pragma once
 
 // Dependency:
-#include "../glm.hpp"
+#include "glm/glm.hpp"
 #include <cfloat>
 #include <limits>
 

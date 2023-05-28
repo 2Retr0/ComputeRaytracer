@@ -8,16 +8,16 @@
 ///
 /// Include <glm/ext/quaternion_geometric.hpp> to use the features of this extension.
 ///
-/// @see core_geometric
+/// @see core_func_geometric
 /// @see ext_quaternion_float
 /// @see ext_quaternion_double
 
 #pragma once
 
 // Dependency:
-#include "../geometric.hpp"
-#include "../exponential.hpp"
-#include "../ext/vector_relational.hpp"
+#include "glm/geometric.hpp"
+#include "glm/exponential.hpp"
+#include "vector_relational.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	pragma message("GLM: GLM_EXT_quaternion_geometric extension included")

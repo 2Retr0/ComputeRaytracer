@@ -11,16 +11,14 @@
 /// Include <glm/gtx/string_cast.hpp> to use the features of this extension.
 ///
 /// Setup strings for GLM type values
-///
-/// This extension is not supported with CUDA
 
 #pragma once
 
 // Dependency:
-#include "../glm.hpp"
-#include "../gtc/type_precision.hpp"
-#include "../gtc/quaternion.hpp"
-#include "../gtx/dual_quaternion.hpp"
+#include "glm/glm.hpp"
+#include "glm/gtc/type_precision.hpp"
+#include "glm/gtc/quaternion.hpp"
+#include "dual_quaternion.hpp"
 #include <string>
 #include <cmath>
 
@@ -30,10 +28,6 @@
 #	else
 #		pragma message("GLM: GLM_GTX_string_cast extension included")
 #	endif
-#endif
-
-#if(GLM_COMPILER & GLM_COMPILER_CUDA)
-#	error "GLM_GTX_string_cast is not supported on CUDA compiler"
 #endif
 
 namespace glm

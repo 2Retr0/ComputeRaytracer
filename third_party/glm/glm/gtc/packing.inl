@@ -1,12 +1,12 @@
 /// @ref gtc_packing
 
-#include "../ext/scalar_relational.hpp"
-#include "../ext/vector_relational.hpp"
-#include "../common.hpp"
-#include "../vec2.hpp"
-#include "../vec3.hpp"
-#include "../vec4.hpp"
-#include "../detail/type_half.hpp"
+#include "glm/ext/scalar_relational.hpp"
+#include "glm/ext/vector_relational.hpp"
+#include "glm/common.hpp"
+#include "glm/vec2.hpp"
+#include "glm/vec3.hpp"
+#include "glm/vec4.hpp"
+#include "glm/detail/type_half.hpp"
 #include <cstring>
 #include <limits>
 
@@ -683,7 +683,7 @@ namespace detail
 		GLM_STATIC_ASSERT(std::numeric_limits<uintType>::is_integer, "uintType must be an integer type");
 		GLM_STATIC_ASSERT(std::numeric_limits<floatType>::is_iec559, "floatType must be a floating point type");
 
-		return vec<L, float, Q>(v) * (static_cast<floatType>(1) / static_cast<floatType>(std::numeric_limits<uintType>::max()));
+		return vec<L, floatType, Q>(v) * (static_cast<floatType>(1) / static_cast<floatType>(std::numeric_limits<uintType>::max()));
 	}
 
 	template<typename intType, length_t L, typename floatType, qualifier Q>

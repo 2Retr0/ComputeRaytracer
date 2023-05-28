@@ -3,9 +3,9 @@
 void main() {
     // Const array of positions for the triangle.
     const vec3 positions[3] = vec3[3](
-            vec3( 1., 1., 0.),
-            vec3(-1., 1., 0.),
-            vec3( 0.,-1., 0.)
+        vec3( 1., 1., 0.),
+        vec3(-1., 1., 0.),
+        vec3( 0.,-1., 0.)
     );
 
     // Output the position of each vertex

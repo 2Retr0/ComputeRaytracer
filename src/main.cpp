@@ -7,5 +7,5 @@ int main(int argc, char *argv[]) {
     engine.run();
     engine.cleanup();
 
-    return 0;
+    exit(EXIT_SUCCESS);
 }

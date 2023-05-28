@@ -17,7 +17,7 @@
 #pragma once
 
 // Dependencies
-#include "../ext/scalar_ulp.hpp"
+#include "scalar_ulp.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	pragma message("GLM: GLM_EXT_vector_ulp extension included")
@@ -25,6 +25,9 @@
 
 namespace glm
 {
+	/// @addtogroup ext_vector_ulp
+	/// @{
+
 	/// Return the next ULP value(s) after the input value(s).
 	///
 	/// @tparam L Integer between 1 and 4 included that qualify the dimension of the vector

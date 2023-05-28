@@ -16,9 +16,9 @@
 #pragma once
 
 // Dependencies
-#include "../ext/scalar_int_sized.hpp"
-#include "../common.hpp"
-#include "../detail/qualifier.hpp"
+#include "scalar_int_sized.hpp"
+#include "glm/common.hpp"
+#include "glm/detail/qualifier.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	pragma message("GLM: GLM_EXT_scalar_ulp extension included")
@@ -26,6 +26,9 @@
 
 namespace glm
 {
+	/// @addtogroup ext_scalar_ulp
+	/// @{
+
 	/// Return the next ULP value(s) after the input value(s).
 	///
 	/// @tparam genType A floating-point scalar type.

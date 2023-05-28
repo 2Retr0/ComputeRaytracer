@@ -15,9 +15,9 @@
 #pragma once
 
 // Dependency:
-#include "../common.hpp"
-#include "../exponential.hpp"
-#include "../geometric.hpp"
+#include "glm/common.hpp"
+#include "glm/exponential.hpp"
+#include "glm/geometric.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	ifndef GLM_ENABLE_EXPERIMENTAL
@@ -84,7 +84,13 @@ namespace glm
 	///
 	/// @see gtx_fast_square_root extension.
 	template<typename genType>
-	GLM_FUNC_DECL genType fastNormalize(genType const& x);
+	GLM_FUNC_DECL genType fastNormalize(genType x);
+
+	/// Faster than the common normalize function but less accurate.
+	///
+	/// @see gtx_fast_square_root extension.
+	template<length_t L, typename T, qualifier Q>
+	GLM_FUNC_DECL vec<L, T, Q> fastNormalize(vec<L, T, Q> const& x);
 
 	/// @}
 }// namespace glm

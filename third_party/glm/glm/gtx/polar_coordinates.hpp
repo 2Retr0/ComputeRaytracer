@@ -13,7 +13,7 @@
 #pragma once
 
 // Dependency:
-#include "../glm.hpp"
+#include "glm/glm.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	ifndef GLM_ENABLE_EXPERIMENTAL
@@ -28,7 +28,7 @@ namespace glm
 	/// @addtogroup gtx_polar_coordinates
 	/// @{
 
-	/// Convert Euclidean to Polar coordinates, x is the xz distance, y, the latitude and z the longitude.
+	/// Convert Euclidean to Polar coordinates, x is the latitude, y the longitude and z the xz distance.
 	///
 	/// @see gtx_polar_coordinates
 	template<typename T, qualifier Q>

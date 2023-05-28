@@ -4,14 +4,14 @@
 #pragma once
 
 // Dependency:
-#include "../detail/type_mat3x3.hpp"
-#include "../detail/type_mat4x4.hpp"
-#include "../detail/type_vec3.hpp"
-#include "../detail/type_vec4.hpp"
-#include "../ext/vector_relational.hpp"
-#include "../ext/quaternion_relational.hpp"
-#include "../gtc/constants.hpp"
-#include "../gtc/matrix_transform.hpp"
+#include "type_mat3x3.hpp"
+#include "type_mat4x4.hpp"
+#include "type_vec3.hpp"
+#include "type_vec4.hpp"
+#include "glm/ext/vector_relational.hpp"
+#include "glm/ext/quaternion_relational.hpp"
+#include "glm/gtc/constants.hpp"
+#include "glm/gtc/matrix_transform.hpp"
 
 namespace glm
 {
@@ -42,12 +42,20 @@ namespace glm
 #		if GLM_LANG & GLM_LANG_CXXMS_FLAG
 			union
 			{
-				struct { T x, y, z, w;};
+#				ifdef GLM_FORCE_QUAT_DATA_XYZW
+					struct { T x, y, z, w; };
+#				else
+					struct { T w, x, y, z; };
+#				endif
 
 				typename detail::storage<4, T, detail::is_aligned<Q>::value>::type data;
 			};
 #		else
-			T x, y, z, w;
+#			ifdef GLM_FORCE_QUAT_DATA_XYZW
+				T x, y, z, w;
+#			else
+				T w, x, y, z;
+#			endif
 #		endif
 
 #		if GLM_SILENT_WARNINGS == GLM_ENABLE
@@ -72,7 +80,7 @@ namespace glm
 
 		// -- Implicit basic constructors --
 
-		GLM_FUNC_DECL GLM_CONSTEXPR qua() GLM_DEFAULT;
+		GLM_FUNC_DECL GLM_CONSTEXPR qua() GLM_DEFAULT_CTOR;
 		GLM_FUNC_DECL GLM_CONSTEXPR qua(qua<T, Q> const& q) GLM_DEFAULT;
 		template<qualifier P>
 		GLM_FUNC_DECL GLM_CONSTEXPR qua(qua<T, P> const& q);
@@ -80,7 +88,12 @@ namespace glm
 		// -- Explicit basic constructors --
 
 		GLM_FUNC_DECL GLM_CONSTEXPR qua(T s, vec<3, T, Q> const& v);
+
+#		ifdef GLM_FORCE_QUAT_DATA_XYZW
+		GLM_FUNC_DECL GLM_CONSTEXPR qua(T x, T y, T z, T w);
+#		else
 		GLM_FUNC_DECL GLM_CONSTEXPR qua(T w, T x, T y, T z);
+#		endif
 
 		// -- Conversion constructors --
 

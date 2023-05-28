@@ -14,10 +14,10 @@
 
 #pragma once
 
-#include "detail/type_vec1.hpp"
-#include "detail/type_vec2.hpp"
-#include "detail/type_vec3.hpp"
-#include "detail/type_vec4.hpp"
+#include "glm/detail/type_vec1.hpp"
+#include "glm/detail/type_vec2.hpp"
+#include "glm/detail/type_vec3.hpp"
+#include "glm/detail/type_vec4.hpp"
 #include <cmath>
 
 namespace glm
@@ -35,7 +35,7 @@ namespace glm
 	template<length_t L, typename T, qualifier Q>
 	GLM_FUNC_DECL vec<L, T, Q> pow(vec<L, T, Q> const& base, vec<L, T, Q> const& exponent);
 
-	/// Returns the natural exponentiation of x, i.e., e^x.
+	/// Returns the natural exponentiation of v, i.e., e^v.
 	///
 	/// @param v exp function is defined for input values of v defined in the range (inf-, inf+) in the limit of the type qualifier.
 	/// @tparam L An integer between 1 and 4 included that qualify the dimension of the vector.
@@ -107,4 +107,4 @@ namespace glm
 	/// @}
 }//namespace glm
 
-#include "detail/func_exponential.inl"
+#include "glm/detail/func_exponential.inl"

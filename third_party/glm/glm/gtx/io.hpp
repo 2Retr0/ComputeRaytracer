@@ -20,8 +20,8 @@
 #pragma once
 
 // Dependency:
-#include "../glm.hpp"
-#include "../gtx/quaternion.hpp"
+#include "glm/glm.hpp"
+#include "quaternion.hpp"
 
 #if GLM_MESSAGES == GLM_ENABLE && !defined(GLM_EXT_INCLUDED)
 #	ifndef GLM_ENABLE_EXPERIMENTAL
@@ -150,7 +150,7 @@ namespace glm
 		template<typename FTy, typename CTy, typename CTr>
 		std::basic_ios<CTy,CTr>& formatted(std::basic_ios<CTy,CTr>&);
 		template<typename FTy, typename CTy, typename CTr>
-		std::basic_ios<CTy,CTr>& unformattet(std::basic_ios<CTy,CTr>&);
+		std::basic_ios<CTy,CTr>& unformatted(std::basic_ios<CTy,CTr>&);
 
 		template<typename CTy, typename CTr>
 		std::basic_ostream<CTy, CTr>& operator<<(std::basic_ostream<CTy, CTr>&, precision const&);
