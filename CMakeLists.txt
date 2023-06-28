@@ -5,6 +5,8 @@ project("VulkanTest2")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
+set(CMAKE_CXX_FLAGS_DEBUG "-Wall -Wextra -g -fsanitize=address" CACHE STRING "")
+set(CMAKE_CXX_FLAGS_RELEASE "-Ofast -flto -fopenmp" CACHE STRING "")
 
 find_package(Vulkan REQUIRED)
 find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{VULKAN_SDK}/Bin/ $ENV{VULKAN_SDK}/Bin32/)

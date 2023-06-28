@@ -64,25 +64,24 @@ struct Mesh {
     std::vector<Vertex> vertices;
     AllocatedBuffer vertexBuffer;
 
-    bool load_from_obj(const char* filename);
+    bool load_from_obj(const char* path, const char* baseDirectory = nullptr);
 };
 
 // Adapted from: https://github.com/tinyobjloader/tinyobjloader
-bool Mesh::load_from_obj(const char *filename) {
+bool Mesh::load_from_obj(const char* path, const char* baseDirectory /*= nullptr*/) {
     // In a `.obj` file, the vertices are not stored together. Instead, it holds a separated arrays of positions,
     // normals, UVs, and Colors, and then an array of faces that points to those. A given `.obj` file also has multiple
     // shapes, as it can hold multiple objects, each of them with separate materials.
     const int faceVertices = 3; // Hardcode loading to triangle (doesn't work for models that haven't been triangulated!)
 
     tinyobj::attrib_t attributes;               // Contains the vertex arrays of the file.
-    std::vector<tinyobj::shape_t> shapes;       // Contains information for each separate object in the file.
+    std::vector<tinyobj::shape_t> shapes;       // Contains information for each object in the file.
     std::vector<tinyobj::material_t> materials; // Contains information about the material of each shape (unused).
 
     std::string warning;
     std::string error;
-
     // We load a single obj file into a single mesh, and all the `.obj` shapes will get merged.
-    tinyobj::LoadObj(&attributes, &shapes, &materials, &warning, &error, filename, nullptr);
+    tinyobj::LoadObj(&attributes, &shapes, &materials, &warning, &error, path, baseDirectory);
 
     if (!warning.empty()) {
         std::cout << "WARN: " << warning << std::endl;
