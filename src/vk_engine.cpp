@@ -1010,19 +1010,8 @@ void VulkanEngine::run() {
     auto moveSensitivity = 0.1f, mouseSensitivity = 0.005f;
     int mouseX, mouseY;
 
-    std::condition_variable signal;
-    std::mutex mutex;
-    int lastFrameNumber;
-    auto future = std::async(std::launch::async, [&] {
-        while (!shouldQuit) {
-            std::unique_lock<std::mutex> lock{mutex};
-
-            auto windowTitle = std::string("VulkanTest2") + (useValidationLayers ? " (DEBUG)" : "") + " (FPS: " + std::to_string(frameNumber - lastFrameNumber) + ")";
-            SDL_SetWindowTitle(window, windowTitle.c_str());
-            lastFrameNumber = frameNumber;
-            signal.wait_for(lock, 1s, [&] { return shouldQuit; });
-        }
-    });
+    int lastFrameNumber = frameNumber;
+    auto startTime = SDL_GetTicks64();
 
     // Main loop
     while (!shouldQuit) {
@@ -1068,12 +1057,17 @@ void VulkanEngine::run() {
         }
 
         draw();
-    }
 
-    {
-        std::unique_lock<std::mutex> lock{mutex};
-        shouldQuit = true;
-        signal.notify_one();
+        // Update FPS counter
+        auto currentTime = SDL_GetTicks64();
+        if (currentTime - startTime > 1000L) {
+            auto windowTitle = std::string("VulkanTest2")
+                    + (useValidationLayers ? " (DEBUG)" : "")
+                    + " (FPS: " + std::to_string(frameNumber - lastFrameNumber) + ")";
+            SDL_SetWindowTitle(window, windowTitle.c_str());
+
+            lastFrameNumber = frameNumber;
+            startTime = currentTime;
+        }
     }
-    future.get(); // Wait for thread to stop
 }

@@ -8,6 +8,7 @@
 #include <deque>
 #include <functional>
 #include <ranges>
+#include <string>
 #include <unordered_map>
 
 // Number of frames to overlap when rendering
