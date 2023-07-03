@@ -1,56 +1,38 @@
-#pragma once
-
-#include <vk_types.h>
-#include <vector>
-#include <glm/vec3.hpp>
-#include <iostream>
+#include "vk_mesh.h"
 #include "tiny_obj_loader.h"
 
-struct VertexInputDescription {
-    std::vector<VkVertexInputBindingDescription> bindings;
-    std::vector<VkVertexInputAttributeDescription> attributes;
-
-    VkPipelineVertexInputStateCreateFlags flags = 0;
-};
-
-struct Vertex {
-    glm::vec3 position;
-    glm::vec3 normal;
-    glm::vec3 color;
-
-    static VertexInputDescription get_vertex_description();
-};
+#include <iostream>
 
 VertexInputDescription Vertex::get_vertex_description() {
     VertexInputDescription description;
 
     // We will have just one vertex buffer binding, with a per-vertex rate
     VkVertexInputBindingDescription mainBinding = {
-            .binding = 0,
-            .stride = sizeof(Vertex),
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        .binding = 0,
+        .stride = sizeof(Vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
     };
     description.bindings.push_back(mainBinding);
 
     VkVertexInputAttributeDescription positionAttribute = {
-            .location = 0, // Position will be stored at Location 0
-            .binding = 0,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = offsetof(Vertex, position),
+        .location = 0, // Position will be stored at Location 0
+        .binding = 0,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = offsetof(Vertex, position),
     };
 
     VkVertexInputAttributeDescription normalAttribute = {
-            .location = 1, // Normal will be stored at Location 1
-            .binding = 0,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = offsetof(Vertex, normal),
+        .location = 1, // Normal will be stored at Location 1
+        .binding = 0,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = offsetof(Vertex, normal),
     };
 
     VkVertexInputAttributeDescription colorAttribute = {
-            .location = 2, // Normal will be stored at Location 2
-            .binding = 0,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = offsetof(Vertex, color),
+        .location = 2, // Normal will be stored at Location 2
+        .binding = 0,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = offsetof(Vertex, color),
     };
 
     description.attributes.push_back(positionAttribute);
@@ -60,15 +42,8 @@ VertexInputDescription Vertex::get_vertex_description() {
 }
 
 
-struct Mesh {
-    std::vector<Vertex> vertices;
-    AllocatedBuffer vertexBuffer;
-
-    bool load_from_obj(const char* path, const char* baseDirectory = nullptr);
-};
-
 // Adapted from: https://github.com/tinyobjloader/tinyobjloader
-bool Mesh::load_from_obj(const char* path, const char* baseDirectory /*= nullptr*/) {
+bool Mesh::load_from_obj(const char *path, const char *baseDirectory /*= nullptr*/) {
     // In a `.obj` file, the vertices are not stored together. Instead, it holds a separated arrays of positions,
     // normals, UVs, and Colors, and then an array of faces that points to those. A given `.obj` file also has multiple
     // shapes, as it can hold multiple objects, each of them with separate materials.
@@ -93,7 +68,7 @@ bool Mesh::load_from_obj(const char* path, const char* baseDirectory /*= nullptr
     }
 
     size_t shapeOffset = 0;
-    for (auto& shape : shapes) {
+    for (auto &shape: shapes) {
         for (size_t faceIndex = 0; faceIndex < shape.mesh.num_face_vertices.size(); faceIndex++) {
             for (size_t vertexIndex = 0; vertexIndex < faceVertices; vertexIndex++) {
                 tinyobj::index_t idx = shape.mesh.indices[shapeOffset + vertexIndex];

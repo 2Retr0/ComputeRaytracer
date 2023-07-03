@@ -1,55 +1,4 @@
-﻿#pragma once
-
-#include <vk_types.h>
-
-/** Abstractions over the initialization of Vulkan structures. */
-namespace vkinit {
-    VkCommandPoolCreateInfo command_pool_create_info(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags = 0);
-
-    VkCommandBufferAllocateInfo command_buffer_allocate_info(VkCommandPool pool, uint32_t count = 1, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-
-    /** Configuration for a single shader stage for the pipeline--built from a shader stage and a shader module. */
-    VkPipelineShaderStageCreateInfo pipeline_shader_stage_create_info(VkShaderStageFlagBits stage, VkShaderModule shaderModule);
-
-    /** Configuration for vertex buffers and vertex formats. This is equivalent to the VAO configuration on OpenGL. */
-    VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info();
-
-    /**
-     * Configuration for what kind of topology will be drawn. This is where you set it to draw triangles, lines, points, or
-     * others like triangle-list.
-     */
-    VkPipelineInputAssemblyStateCreateInfo input_assembly_create_info(VkPrimitiveTopology topology);
-
-    /**
-     * Configuration for the fixed-function rasterization. This is where we enable or disable backface culling, and set
-     * line width or wireframe drawing.
-     */
-    VkPipelineRasterizationStateCreateInfo rasterization_state_create_info(VkPolygonMode polygonMode);
-
-    /** Configuration for MSAA within the pipeline. */
-    VkPipelineMultisampleStateCreateInfo multisampling_state_create_info();
-
-    /** Configuration for how the pipeline blends into a given attachment. */
-    VkPipelineColorBlendAttachmentState color_blend_attachment_state();
-
-    /**
-     * Configuration for information about shader inputs of a given pipeline. We would configure our push-constraints
-     * and descriptor sets here.
-     */
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info();
-
-    VkFenceCreateInfo fence_create_info(VkFenceCreateFlags flags = 0);
-
-    VkSemaphoreCreateInfo semaphore_create_info(VkSemaphoreCreateFlags flags = 0);
-
-    VkImageCreateInfo image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);
-
-    VkImageViewCreateInfo imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
-
-    /** Configuration for information about how to use depth-testing in a render pipeline. */
-    VkPipelineDepthStencilStateCreateInfo
-    depth_stencil_create_info(bool enableDepthTest, bool enableDepthWrite, VkCompareOp compareOperation);
-}
+#include <vk_initializers.h>
 
 VkCommandPoolCreateInfo vkinit::command_pool_create_info(
     uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags /*= 0*/) {
@@ -72,6 +21,74 @@ VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
         .level = level,
         .commandBufferCount = count,
     };
+}
+
+
+VkCommandBufferBeginInfo vkinit::command_buffer_begin_info(VkCommandBufferUsageFlags flags /**= 0*/) {
+    return {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = flags,
+        .pInheritanceInfo = nullptr,
+    };
+}
+
+
+VkFramebufferCreateInfo vkinit::framebuffer_create_info(VkRenderPass renderpass, VkExtent2D extent) {
+    return {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .renderPass = renderpass,
+        .attachmentCount = 1,
+        .width = extent.width,
+        .height = extent.height,
+        .layers = 1,
+    };
+}
+
+
+VkSubmitInfo vkinit::submit_info(VkCommandBuffer* commandBuffer) {
+    return {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .pWaitDstStageMask = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = commandBuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr,
+    };
+}
+
+
+VkPresentInfoKHR vkinit::present_info() {
+    return {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .swapchainCount = 0,
+        .pSwapchains = nullptr,
+        .pImageIndices = nullptr,
+    };
+}
+
+
+VkRenderPassBeginInfo vkinit::renderpass_begin_info(VkRenderPass renderpass, VkExtent2D windowExtent, VkFramebuffer framebuffer) {
+    VkRenderPassBeginInfo info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = nullptr,
+        .renderPass = renderpass,
+        .framebuffer = framebuffer,
+        .clearValueCount = 1,
+        .pClearValues = nullptr,
+    };
+    info.renderArea.offset.x = 0;
+    info.renderArea.offset.y = 0;
+    info.renderArea.extent = windowExtent;
+
+    return info;
 }
 
 
@@ -121,11 +138,11 @@ VkPipelineRasterizationStateCreateInfo vkinit::rasterization_state_create_info(V
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .pNext = nullptr,
         .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE,  // Discards all primitives before the rasterization stage if enabled.
-        .polygonMode = polygonMode,           // Input for toggling between wireframe and solid drawing.
-        .cullMode = VK_CULL_MODE_NONE,        // No backface culling
+        .rasterizerDiscardEnable = VK_FALSE, // Discards all primitives before the rasterization stage if enabled.
+        .polygonMode = polygonMode,          // Input for toggling between wireframe and solid drawing.
+        .cullMode = VK_CULL_MODE_NONE,       // No backface culling
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE,          // No depth bias
+        .depthBiasEnable = VK_FALSE, // No depth bias
         .depthBiasConstantFactor = 0.0f,
         .depthBiasClamp = 0.0f,
         .depthBiasSlopeFactor = 0.0f,
@@ -204,14 +221,14 @@ VkImageCreateInfo vkinit::image_create_info(VkFormat format, VkImageUsageFlags u
     return {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .pNext = nullptr,
-        .imageType = VK_IMAGE_TYPE_2D,     // How many dimensions the image has
-        .format = format,                  // What the data of the texture is (e.g., single float (for depth) or color)
-        .extent = extent,                  // Size of the image, in pixels
+        .imageType = VK_IMAGE_TYPE_2D, // How many dimensions the image has
+        .format = format,              // What the data of the texture is (e.g., single float (for depth) or color)
+        .extent = extent,              // Size of the image, in pixels
         .mipLevels = 1,
-        .arrayLayers = 1,                  // For layered textures (e.g., cubemaps which have 6 layers)
-        .samples = VK_SAMPLE_COUNT_1_BIT,  // MSAA samples
+        .arrayLayers = 1,                 // For layered textures (e.g., cubemaps which have 6 layers)
+        .samples = VK_SAMPLE_COUNT_1_BIT, // MSAA samples
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = usageFlags,               // Controls how the GPU handles the image memory (must set properly!)
+        .usage = usageFlags, // Controls how the GPU handles the image memory (must set properly!)
     };
 }
 
@@ -252,11 +269,11 @@ VkPipelineDepthStencilStateCreateInfo vkinit::depth_stencil_create_info(
     return {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .pNext = nullptr,
-        .depthTestEnable = enableDepthTest ? VK_TRUE : VK_FALSE,                     // Whether to enable z-culling
-        .depthWriteEnable = enableDepthWrite ? VK_TRUE : VK_FALSE,                   // Whether to write depth
+        .depthTestEnable = enableDepthTest ? VK_TRUE : VK_FALSE,   // Whether to enable z-culling
+        .depthWriteEnable = enableDepthWrite ? VK_TRUE : VK_FALSE, // Whether to write depth
         .depthCompareOp = enableDepthTest ? compareOperation : VK_COMPARE_OP_ALWAYS,
         .depthBoundsTestEnable = VK_FALSE,
-        .stencilTestEnable = VK_FALSE,                                               // We aren't using stencil test
+        .stencilTestEnable = VK_FALSE, // We aren't using stencil test
 
         // If the depth is outside the bounds, the pixel will be skipped
         .minDepthBounds = 0.0f, // Optional
@@ -264,3 +281,26 @@ VkPipelineDepthStencilStateCreateInfo vkinit::depth_stencil_create_info(
     };
 }
 
+
+VkDescriptorSetLayoutBinding vkinit::descriptor_set_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding) {
+    return {
+        .binding = binding,
+        .descriptorType = type,
+        .descriptorCount = 1,
+        .stageFlags = stageFlags,
+        .pImmutableSamplers = nullptr,
+    };
+}
+
+
+VkWriteDescriptorSet vkinit::write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet destinationSet, VkDescriptorBufferInfo* bufferInfo , uint32_t binding) {
+    return {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
+        .dstSet = destinationSet,
+        .dstBinding = binding,
+        .descriptorCount = 1,
+        .descriptorType = type,
+        .pBufferInfo = bufferInfo,
+    };
+}
