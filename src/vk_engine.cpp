@@ -203,7 +203,7 @@ void VulkanEngine::init_swapchain() {
     auto vkbSwapchain = swapchainBuilder
                             .use_default_format_selection()
                             // An easy way to limit FPS for now.
-                            .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
+                            .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
                             // If you need to resize the window, the swapchain will need to be rebuilt.
                             .set_desired_extent(windowExtent.width, windowExtent.height)
                             .build()
@@ -531,12 +531,12 @@ void VulkanEngine::init_pipelines() {
     // Now our mesh pipeline has the space for the push constants, so we can now execute the command to use them.
     create_material(meshPipeline, meshPipelineLayout, "defaultmesh");
 
-//    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
-//    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, shaderModules["tri_mesh.vert"]));
-//    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, shaderModules["triangle.frag"]));
-//
-//    VkPipeline testPipeline = pipelineBuilder.build_pipeline(device, renderpass);
-//    create_material(testPipeline, meshPipelineLayout, "testmesh");
+    //    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+    //    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, shaderModules["tri_mesh.vert"]));
+    //    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, shaderModules["triangle.frag"]));
+    //
+    //    VkPipeline testPipeline = pipelineBuilder.build_pipeline(device, renderpass);
+    //    create_material(testPipeline, meshPipelineLayout, "testmesh");
 
     // --- Cleanup ---
     // Destroy all shader modules, outside the queue
@@ -546,7 +546,7 @@ void VulkanEngine::init_pipelines() {
     mainDeletionQueue.push([=, this]() {
         // Destroy the pipelines we have created.
         vkDestroyPipeline(device, meshPipeline, nullptr);
-//        vkDestroyPipeline(device, testPipeline, nullptr);
+        //        vkDestroyPipeline(device, testPipeline, nullptr);
 
         // Destroy the pipeline layouts that they use.
         vkDestroyPipelineLayout(device, meshPipelineLayout, nullptr);
@@ -680,7 +680,7 @@ void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, RenderObject *fir
     vmaUnmapMemory(allocator, currentFrame.cameraBuffer.allocation);
 
     // --- Writing Scene Data ---
-    auto framed = static_cast<float>(frameNumber) / 120.f;
+    auto framed = static_cast<float>(animationFrameNumber) / 120.f;
     auto frameIndex = frameNumber % FRAME_OVERLAP;
     sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
 
@@ -697,9 +697,9 @@ void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, RenderObject *fir
 
     // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
     // normally.
-    auto *objectSSBO = reinterpret_cast<GPUObjectData*>(objectData);
+    auto *objectSSBO = reinterpret_cast<GPUObjectData *>(objectData);
     for (int i = 0; i < count; i++) {
-        RenderObject& object = first[i];
+        RenderObject &object = first[i];
         objectSSBO[i].modelMatrix = object.transformMatrix;
     }
     vmaUnmapMemory(allocator, currentFrame.objectBuffer.allocation);
@@ -953,7 +953,7 @@ void VulkanEngine::draw() {
     // --- Main Renderpass ---
     // Make a clear-color from frame number. This will flash with a 120*π frame period.
     VkClearValue clearValue;
-    float flash = abs(sin(static_cast<float>(frameNumber) / 120.0f));
+    float flash = abs(sin(static_cast<float>(animationFrameNumber) / 120.0f));
     clearValue.color = {{0.0f, 0.0f, flash, 1.0f}};
 
     VkClearValue depthClear;
@@ -1007,11 +1007,12 @@ void VulkanEngine::run() {
     SDL_Event windowEvent;
     bool shouldQuit = false;
     auto left = glm::cross(up, forward);
-    auto moveSensitivity = 0.1f, mouseSensitivity = 0.005f;
+    auto mouseSensitivity = 0.005f; // Mouse sensitivity is static, move sensitivity is based on frame time!
     int mouseX, mouseY;
 
     int lastFrameNumber = frameNumber;
-    auto startTime = SDL_GetTicks64();
+    auto fpsUpdateTimeoutMs = SDL_GetTicks64() + 1000;
+    auto animationUpdateTimeoutMs = SDL_GetTicks64() + 17; // ~60Hz
 
     // Main loop
     while (!shouldQuit) {
@@ -1033,6 +1034,14 @@ void VulkanEngine::run() {
                     break;
             }
         }
+
+        auto startTicksMs = ticksMs;
+
+        draw();
+
+        ticksMs = SDL_GetTicks64();
+        auto frameTimeMs = ticksMs - startTicksMs;
+        auto moveSensitivity = 0.25f * (static_cast<float>(frameTimeMs) / 17.0f); // This breaks down past 1000Hz!
 
         // Handle continuously-held key input for movement.
         auto *keyStates = SDL_GetKeyboardState(nullptr);
@@ -1056,18 +1065,19 @@ void VulkanEngine::run() {
             left = glm::cross(up, forward);
         }
 
-        draw();
-
         // Update FPS counter
-        auto currentTime = SDL_GetTicks64();
-        if (currentTime - startTime > 1000L) {
-            auto windowTitle = std::string("VulkanTest2")
-                    + (useValidationLayers ? " (DEBUG)" : "")
-                    + " (FPS: " + std::to_string(frameNumber - lastFrameNumber) + ")";
+        if (ticksMs >= fpsUpdateTimeoutMs) {
+            auto fps = frameNumber - lastFrameNumber;
+            auto windowTitle = std::string("VulkanTest2") + (useValidationLayers ? " (DEBUG)" : "") + " (FPS: " + std::to_string(fps) + ")";
             SDL_SetWindowTitle(window, windowTitle.c_str());
 
             lastFrameNumber = frameNumber;
-            startTime = currentTime;
+            fpsUpdateTimeoutMs = ticksMs + 1000; // Update timeout timer.
+        }
+
+        if (ticksMs >= animationUpdateTimeoutMs) {
+            animationUpdateTimeoutMs = ticksMs + 17;
+            animationFrameNumber++;
         }
     }
 }

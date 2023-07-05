@@ -132,8 +132,10 @@ public:
     // --- Window ---
     bool isInitialized = false;
     int frameNumber = 0;
+    int animationFrameNumber = 0;
     VkExtent2D windowExtent = {1280, 800}; // The width and height of the window (px)
     struct SDL_Window *window = nullptr;   // Forward-declaration for the window
+    uint32_t ticksMs = 0;
 
     // --- Vulkan ---
     VkInstance instance;                      // Vulkan library handle
