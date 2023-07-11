@@ -47,7 +47,7 @@ VkFramebufferCreateInfo vkinit::framebuffer_create_info(VkRenderPass renderpass,
 }
 
 
-VkSubmitInfo vkinit::submit_info(VkCommandBuffer* commandBuffer) {
+VkSubmitInfo vkinit::submit_info(VkCommandBuffer *commandBuffer) {
     return {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .pNext = nullptr,
@@ -293,7 +293,7 @@ VkDescriptorSetLayoutBinding vkinit::descriptor_set_layout_binding(VkDescriptorT
 }
 
 
-VkWriteDescriptorSet vkinit::write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet destinationSet, VkDescriptorBufferInfo* bufferInfo , uint32_t binding) {
+VkWriteDescriptorSet vkinit::write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet destinationSet, VkDescriptorBufferInfo *bufferInfo, uint32_t binding) {
     return {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .pNext = nullptr,

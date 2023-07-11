@@ -133,12 +133,14 @@ void VulkanEngine::init_vulkan() {
     vkb::InstanceBuilder builder;
 
     // Make the Vulkan instance, with basic debug features
+    // clang-format off
     auto vkbInstance = builder.set_app_name("VulkanTest2")
-                           .request_validation_layers(useValidationLayers)
-                           .require_api_version(1, 1, 0)
-                           .use_default_debug_messenger()
-                           .build()
-                           .value();
+       .request_validation_layers(useValidationLayers)
+       .require_api_version(1, 1, 0)
+       .use_default_debug_messenger()
+       .build()
+       .value();
+    // clang-format on
 
     instance = vkbInstance.instance;
     debugMessenger = vkbInstance.debug_messenger;
@@ -149,11 +151,13 @@ void VulkanEngine::init_vulkan() {
 
     // Use `vkBootstrap` to select a GPU. We want a GPU that can write to the SDL surface and supports Vulkan 1.1.
     vkb::PhysicalDeviceSelector selector{vkbInstance};
+    // clang-format off
     auto vkbPhysicalDevice = selector
-                                 .set_minimum_version(1, 1)
-                                 .set_surface(surface)
-                                 .select()
-                                 .value();
+        .set_minimum_version(1, 1)
+        .set_surface(surface)
+        .select()
+        .value();
+    // clang-format on
 
     // Create the final Vulkan device from the chosen `VkPhysicalDevice`
     vkb::DeviceBuilder deviceBuilder{vkbPhysicalDevice};
@@ -200,14 +204,16 @@ void VulkanEngine::init_swapchain() {
     // VK_PRESENT_MODE_FIFO_KHR:         Strong VSync
     // VK_PRESENT_MODE_FIFO_RELAXED_KHR: Adaptive VSync (immediate if below target)
     // VK_PRESENT_MODE_MAILBOX_KHR:      Triple-buffering without strong VSync
+    // clang-format off
     auto vkbSwapchain = swapchainBuilder
-                            .use_default_format_selection()
-                            // An easy way to limit FPS for now.
-                            .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
-                            // If you need to resize the window, the swapchain will need to be rebuilt.
-                            .set_desired_extent(windowExtent.width, windowExtent.height)
-                            .build()
-                            .value();
+        .use_default_format_selection()
+        // An easy way to limit FPS for now.
+        .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
+        // If you need to resize the window, the swapchain will need to be rebuilt.
+        .set_desired_extent(windowExtent.width, windowExtent.height)
+        .build()
+        .value();
+    // clang-format on
 
     // Store swapchain and its related images
     swapchain = vkbSwapchain.swapchain;
@@ -249,7 +255,7 @@ void VulkanEngine::init_commands() {
     // We want the pool to allow the resetting of individual command buffers.
     auto commandPoolInfo = vkinit::command_pool_create_info(graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
-    for (auto &frame: frames) {
+    for (auto &frame : frames) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolInfo, nullptr, &frame.commandPool));
 
         // Allocate the other default command buffer that we will use for rendering.
@@ -383,7 +389,7 @@ void VulkanEngine::init_sync_structures() {
     auto fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
     auto semaphoreCreateInfo = vkinit::semaphore_create_info();
 
-    for (auto &frame: frames) {
+    for (auto &frame : frames) {
         // --- Create Fence ---
         VK_CHECK(vkCreateFence(device, &fenceCreateInfo, nullptr, &frame.renderFence));
 
@@ -501,7 +507,7 @@ void VulkanEngine::init_pipelines() {
         "tri_mesh.vert",
     };
 
-    for (const auto &shaderName: shaderNames) {
+    for (const auto &shaderName : shaderNames) {
         VkShaderModule shaderModule;
         if (!load_shader_module((shaderBaseDirectory + shaderName + ".spv").c_str(), &shaderModule)) {
             std::cout << "ERROR: Could not load shader module: " + shaderName << std::endl;
@@ -540,7 +546,7 @@ void VulkanEngine::init_pipelines() {
 
     // --- Cleanup ---
     // Destroy all shader modules, outside the queue
-    for (const auto &[shaderName, shaderModule]: shaderModules)
+    for (const auto &[shaderName, shaderModule] : shaderModules)
         vkDestroyShaderModule(device, shaderModule, nullptr);
 
     mainDeletionQueue.push([=, this]() {
@@ -826,7 +832,7 @@ void VulkanEngine::init_descriptors() {
     // Due to alignment, we will have to increase the size of the buffer so that it fits 2 padded `GPUSceneData` structs
     sceneParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-    for (auto &frame: frames) {
+    for (auto &frame : frames) {
         // Uniform buffers are the best for this sort of small, read only shader data. They have a size limitation, but
         // they are very fast to access in the shaders.
         frame.cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -889,7 +895,7 @@ void VulkanEngine::init_descriptors() {
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
         // Add buffers to deletion queues
-        for (auto &frame: frames) {
+        for (auto &frame : frames) {
             vmaDestroyBuffer(allocator, frame.cameraBuffer.buffer, frame.cameraBuffer.allocation);
             vmaDestroyBuffer(allocator, frame.objectBuffer.buffer, frame.objectBuffer.allocation);
         }

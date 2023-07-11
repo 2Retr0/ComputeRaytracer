@@ -68,7 +68,7 @@ bool Mesh::load_from_obj(const char *path, const char *baseDirectory /*= nullptr
     }
 
     size_t shapeOffset = 0;
-    for (auto &shape: shapes) {
+    for (auto &shape : shapes) {
         for (size_t faceIndex = 0; faceIndex < shape.mesh.num_face_vertices.size(); faceIndex++) {
             for (size_t vertexIndex = 0; vertexIndex < faceVertices; vertexIndex++) {
                 tinyobj::index_t idx = shape.mesh.indices[shapeOffset + vertexIndex];
