@@ -105,8 +105,8 @@ struct FrameData {
     VkCommandBuffer mainCommandBuffer; // The buffer we will record into.
 
     // --- Descriptor Sets ---
-    AllocatedBuffer cameraBuffer; // Buffer that holds a single `GPUCameraData` to use when rendering.
-    VkDescriptorSet globalDescriptor;
+//    AllocatedBuffer cameraBuffer; // Buffer that holds a single `GPUCameraData` to use when rendering.
+//    VkDescriptorSet globalDescriptor;
 
     // --- Memory ---
     AllocatedBuffer objectBuffer;
@@ -194,6 +194,7 @@ public:
     VkDescriptorSetLayout globalSetLayout;
     VkDescriptorSetLayout objectSetLayout;
     VkDescriptorPool descriptorPool;
+    VkDescriptorSet globalDescriptor;
 
 private:
     void init_vulkan();

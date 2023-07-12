@@ -371,7 +371,7 @@ void VulkanEngine::init_default_renderpass() {
 
 void VulkanEngine::init_framebuffers() {
     // Create the framebuffers for the swapchain images. This will connect the renderpass to the images for rendering.
-    VkFramebufferCreateInfo framebufferInfo = vkinit::framebuffer_create_info(renderpass, windowExtent);
+    auto framebufferInfo = vkinit::framebuffer_create_info(renderpass, windowExtent);
 
     const uint32_t swapchainImageCount = swapchainImages.size();
     framebuffers = std::vector<VkFramebuffer>(swapchainImageCount);
@@ -399,6 +399,10 @@ void VulkanEngine::init_sync_structures() {
     // GPU command (for the first frame)
     auto fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
     auto semaphoreCreateInfo = vkinit::semaphore_create_info();
+    auto uploadFenceCreateInfo = vkinit::fence_create_info();
+
+    VK_CHECK(vkCreateFence(device, &uploadFenceCreateInfo, nullptr, &uploadContext.uploadFence));
+    mainDeletionQueue.push([this]() { vkDestroyFence(device, uploadContext.uploadFence, nullptr); });
 
     for (auto &frame : frames) {
         // --- Create Fence ---
@@ -618,8 +622,8 @@ void VulkanEngine::upload_mesh(Mesh &mesh) {
 
     AllocatedBuffer stagingBuffer{};
     // Allocate the buffer.
-    VK_CHECK(vmaCreateBuffer(allocator, &stagingBufferInfo, &vmaAllocInfo,
-                             &stagingBuffer.buffer, &stagingBuffer.allocation, nullptr));
+    VK_CHECK(vmaCreateBuffer(
+        allocator, &stagingBufferInfo, &vmaAllocInfo, &stagingBuffer.buffer, &stagingBuffer.allocation, nullptr));
 
     // To push data into a VkBuffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
     // done with writing the data, we can unmap. We copy the mesh vertex data into the buffer.
@@ -642,19 +646,16 @@ void VulkanEngine::upload_mesh(Mesh &mesh) {
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
     // Allocate the buffer.
-    VK_CHECK(vmaCreateBuffer(allocator, &vertexBufferInfo, &vmaAllocInfo,
-                             &mesh.vertexBuffer.buffer, &mesh.vertexBuffer.allocation, nullptr));
+    VK_CHECK(vmaCreateBuffer(
+        allocator, &vertexBufferInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer, &mesh.vertexBuffer.allocation, nullptr));
 
     // Execute the copy command, enqueuing a `vkCmdCopyBuffer()` command
     immediate_submit([=](VkCommandBuffer commandBuffer) {
-        VkBufferCopy copy = {
-            .srcOffset = 0,
-            .dstOffset = 0,
-            .size = bufferSize,
-        };
+        VkBufferCopy copy = {.srcOffset = 0, .dstOffset = 0, .size = bufferSize,};
         vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer, mesh.vertexBuffer.buffer, 1, &copy);
     });
 
+    // --- Cleanup ---
     // Add the destruction of the triangle mesh buffer to the deletion queue
     mainDeletionQueue.push([=, this]() {
         vmaDestroyBuffer(allocator, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
@@ -719,20 +720,17 @@ Mesh *VulkanEngine::get_mesh(const std::string &name) {
 
 
 void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, RenderObject *first, uint32_t count) {
+    const auto FRAME_OFFSET = pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData));
+
     auto currentFrame = get_current_frame();
     // --- Writing Camera Data (View) ---
     auto view = glm::lookAt(camera, camera + forward, up);
     auto projection = glm::perspective(glm::radians(70.f), 16.f / 9.f, 0.1f, 200.f);
     projection[1][1] *= -1; // Correct OpenGL coordinate system
 
-    GPUCameraData cameraData = {view, projection, projection * view};
-
-    void *bufferData;
-    vmaMapMemory(allocator, currentFrame.cameraBuffer.allocation, &bufferData);
-    memcpy(bufferData, &cameraData, sizeof(GPUCameraData));
-    vmaUnmapMemory(allocator, currentFrame.cameraBuffer.allocation);
-
     // --- Writing Scene Data ---
+    GPUCameraData cameraParameters = {view, projection, projection * view};
+
     auto framed = static_cast<float>(animationFrameNumber) / 120.f;
     auto frameIndex = frameNumber % FRAME_OVERLAP;
     sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
@@ -740,8 +738,14 @@ void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, RenderObject *fir
     uint8_t *sceneData;
     vmaMapMemory(allocator, sceneParameterBuffer.allocation, (void **) &sceneData);
 
-    sceneData += pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
+    // Write camera parameter data
+    sceneData += FRAME_OFFSET * frameIndex;
+    memcpy(sceneData, &cameraParameters, sizeof(GPUCameraData));
+
+    // Write scene parameter data
+    sceneData += sizeof(GPUCameraData);
     memcpy(sceneData, &sceneParameters, sizeof(GPUSceneData));
+
     vmaUnmapMemory(allocator, sceneParameterBuffer.allocation);
 
     // --- Writing Object Storage Data ---
@@ -770,8 +774,8 @@ void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, RenderObject *fir
 
             // Bind the camera data descriptor set when changing pipelines.
             // Offset for our scene buffer--dynamic uniform buffers allow us to specify offset when binding.
-            uint32_t uniform_offset = pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &currentFrame.globalDescriptor, 1, &uniform_offset);
+            uint32_t uniform_offset = FRAME_OFFSET * frameIndex;
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &globalDescriptor, 1, &uniform_offset);
 
             // Bind the object data descriptor set
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &currentFrame.objectDescriptor, 0, nullptr);
@@ -822,17 +826,16 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t size, VkBufferUsageFlags buff
 
 
 void VulkanEngine::init_descriptors() {
-    const size_t SCENE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
+    const auto SCENE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData));
     const int MAX_OBJECTS = 10E3;
 
     // --- Descriptor Pool Setup ---
     // When creating a descriptor pool, you need to specify how many descriptors of each type you will need, and what’s
     // the maximum number of sets to allocate from it.
 
-    // Create a descriptor pool that will hold 10 uniform buffer handles and 10 dynamic uniform buffer handles, each
+    // Create a descriptor pool that will hold 10 dynamic uniform buffer handles and 10 storage buffer handles, each
     // with a maximum of 10 descriptor sets.
     std::vector<VkDescriptorPoolSize> sizes = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
     };
@@ -849,17 +852,15 @@ void VulkanEngine::init_descriptors() {
 
     // --- Descriptor Set Layouts ---
     // Global descriptor set
-    // Binding for camera data at 0 and scene data at 1
-    auto cameraBinding = vkinit::descriptor_set_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
-    auto sceneBinding = vkinit::descriptor_set_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
-    VkDescriptorSetLayoutBinding bindings[] = {cameraBinding, sceneBinding};
+    // Binding for scene data + camera data at 0 and scene data at 1
+    auto sceneBinding = vkinit::descriptor_set_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 
     VkDescriptorSetLayoutCreateInfo globalDescriptorSetInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .bindingCount = 2,
-        .pBindings = bindings,
+        .bindingCount = 1,
+        .pBindings = &sceneBinding,
     };
     vkCreateDescriptorSetLayout(device, &globalDescriptorSetInfo, nullptr, &globalSetLayout);
 
@@ -876,23 +877,25 @@ void VulkanEngine::init_descriptors() {
     vkCreateDescriptorSetLayout(device, &objectDescriptorSetInfo, nullptr, &objectSetLayout);
 
     // --- Descriptor/Buffer Allocation ---
-    // Due to alignment, we will have to increase the size of the buffer so that it fits 2 padded `GPUSceneData` structs
+    VkDescriptorSetAllocateInfo globalDescriptorSetAllocInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .descriptorPool = descriptorPool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &globalSetLayout,
+    };
+    vkAllocateDescriptorSets(device, &globalDescriptorSetAllocInfo, &globalDescriptor);
+
+    // Uniform buffers are the best for this sort of small, read only shader data. They have a size limitation, but
+    // they are very fast to access in the shaders.
+    // Due to alignment, we will have to increase the size of the buffer so that it fits two padded `GPUSceneData` and
+    // `GPUCameraData` structs.
     sceneParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
     for (auto &frame : frames) {
-        // Uniform buffers are the best for this sort of small, read only shader data. They have a size limitation, but
-        // they are very fast to access in the shaders.
-        frame.cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        // With storage buffers, you can have an unsized array in a shader with whatever data you want. A common use
+        // for them is to store the data of all the objects in the scene.
         frame.objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-        VkDescriptorSetAllocateInfo globalDescriptorSetAllocInfo = {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .pNext = nullptr,
-            .descriptorPool = descriptorPool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &globalSetLayout,
-        };
-        vkAllocateDescriptorSets(device, &globalDescriptorSetAllocInfo, &frame.globalDescriptor);
 
         VkDescriptorSetAllocateInfo objectDescriptorSetAllocInfo = {
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -904,17 +907,11 @@ void VulkanEngine::init_descriptors() {
         vkAllocateDescriptorSets(device, &objectDescriptorSetAllocInfo, &frame.objectDescriptor);
 
         // We now have a descriptor stored in our frame struct. But this descriptor is not pointing to any buffer yet,
-        // so we need to make it point into our camera buffer.
-        VkDescriptorBufferInfo cameraBufferInfo = {
-            .buffer = frame.cameraBuffer.buffer,
-            .offset = 0,
-            .range = sizeof(GPUCameraData),
-        };
-
+        // so we need to make it point into our buffers.
         VkDescriptorBufferInfo sceneBufferInfo = {
             .buffer = sceneParameterBuffer.buffer,
             .offset = 0,
-            .range = sizeof(GPUSceneData),
+            .range = sizeof(GPUCameraData) + sizeof(GPUSceneData),
         };
 
         VkDescriptorBufferInfo objectBufferInfo = {
@@ -923,14 +920,13 @@ void VulkanEngine::init_descriptors() {
             .range = sizeof(GPUObjectData) * MAX_OBJECTS,
         };
 
-        auto cameraWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, frame.globalDescriptor, &cameraBufferInfo, 0);
-        auto sceneWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, frame.globalDescriptor, &sceneBufferInfo, 1);
+        auto sceneWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, globalDescriptor, &sceneBufferInfo, 0);
         auto objectWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, frame.objectDescriptor, &objectBufferInfo, 0);
-        VkWriteDescriptorSet setWrites[] = {cameraWrite, sceneWrite, objectWrite};
+        VkWriteDescriptorSet setWrites[] = {sceneWrite, objectWrite};
 
         // Note: We use one call to `vkUpdateDescriptorSets()` to update *two* different descriptor sets--this is
         //       completely valid to do!
-        vkUpdateDescriptorSets(device, 3, setWrites, 0, nullptr);
+        vkUpdateDescriptorSets(device, 2, setWrites, 0, nullptr);
     }
 
     // --- Cleanup ---
@@ -942,10 +938,8 @@ void VulkanEngine::init_descriptors() {
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
         // Add buffers to deletion queues
-        for (auto &frame : frames) {
-            vmaDestroyBuffer(allocator, frame.cameraBuffer.buffer, frame.cameraBuffer.allocation);
+        for (auto &frame : frames)
             vmaDestroyBuffer(allocator, frame.objectBuffer.buffer, frame.objectBuffer.allocation);
-        }
         vmaDestroyBuffer(allocator, sceneParameterBuffer.buffer, sceneParameterBuffer.allocation);
     });
 }
@@ -965,26 +959,20 @@ size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) const {
 void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer commandBuffer)> &&function) {
     // This is similar logic to the render loop (i.e., reusing the same command buffer from frame to frame).
     // If we wanted to submit multiple command buffers, we would simply allocate as many as we needed ahead of time.
-
     // We first allocate command buffer, we then call the function between begin/end command buffer, and then we submit it.
     // Then we wait for the submit to be finished, and reset the command pool.
     auto commandBuffer = uploadContext.commandBuffer;
-
     // Begin the command buffer recording. We will use this command buffer exactly once before resetting.
     auto commandBufferBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     VK_CHECK(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
-
     // Execute the function
     function(commandBuffer);
     VK_CHECK(vkEndCommandBuffer(commandBuffer));
-
     auto submitInfo = vkinit::submit_info(&commandBuffer);
     // Submit command buffer to the queue and execute it. `uploadFence` will now block until the graphics commands finish.
     VK_CHECK(vkQueueSubmit(graphicsQueue, 1, &submitInfo, uploadContext.uploadFence));
-
     vkWaitForFences(device, 1, &uploadContext.uploadFence, true, 1E11);
     vkResetFences(device, 1, &uploadContext.uploadFence);
-
     // Reset the command buffers within the command pool.
     vkResetCommandPool(device, uploadContext.commandPool, 0);
 }
@@ -1028,7 +1016,7 @@ void VulkanEngine::draw() {
     auto commandBuffer = currentFrame.mainCommandBuffer;
     // Begin the command buffer recording. As we will use this command buffer exactly once, we want to inform Vulkan
     // to allow for great optimization by the driver.
-    VkCommandBufferBeginInfo commandBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    auto commandBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     VK_CHECK(vkBeginCommandBuffer(commandBuffer, &commandBeginInfo));
 
     // --- Main Renderpass ---
@@ -1044,7 +1032,7 @@ void VulkanEngine::draw() {
 
     // Start the main renderpass. We will use the clear color from above, and the framebuffer of the index the swapchain
     // gave us.
-    VkRenderPassBeginInfo renderpassInfo = vkinit::renderpass_begin_info(renderpass, windowExtent, framebuffers[swapchainImageIndex]);
+    auto renderpassInfo = vkinit::renderpass_begin_info(renderpass, windowExtent, framebuffers[swapchainImageIndex]);
     renderpassInfo.clearValueCount = 2;
     renderpassInfo.pClearValues = &clearValues[0];
 
@@ -1058,7 +1046,7 @@ void VulkanEngine::draw() {
     // Prepare the submission to the queue. We wait on `presentSemaphore`, as it's only signaled when the swapchain is
     // ready. We will then signal `renderSemaphore`, to inform that rendering has finished.
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSubmitInfo submitInfo = vkinit::submit_info(&commandBuffer);
+    auto submitInfo = vkinit::submit_info(&commandBuffer);
     submitInfo.pWaitDstStageMask = &waitStage;
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = &currentFrame.presentSemaphore;
@@ -1071,7 +1059,7 @@ void VulkanEngine::draw() {
 
     // Put the rendered image into the visible window (after waiting on `renderSemaphore` as it's necessary that
     // drawing commands have finished before the image is displayed to the user).
-    VkPresentInfoKHR presentInfo = vkinit::present_info();
+    auto presentInfo = vkinit::present_info();
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &swapchain;
     presentInfo.waitSemaphoreCount = 1;

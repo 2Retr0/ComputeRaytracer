@@ -3,7 +3,7 @@
 layout (location = 0) in vec3 inColor;
 layout (location = 0) out vec4 outFragColor;
 
-layout(set = 0, binding = 1) uniform SceneData {
+layout(set = 0, binding = 0) uniform SceneData {
     vec4 fogColor;          // w=exponent
     vec4 fogDistances;      // x=min; y=max; z,w=unused.
     vec4 ambientColor;
