@@ -193,7 +193,7 @@ void VulkanEngine::init_vulkan() {
 
 
 void VulkanEngine::init_swapchain() {
-    vkb::SwapchainBuilder swapchainBuilder{chosenGPU, device, surface};
+    vkb::SwapchainBuilder swapchainBuilder {chosenGPU, device, surface};
 
     // --- Present Modes ---
     // VK_PRESENT_MODE_IMMEDIATE_KHR:    Immediate
@@ -203,7 +203,7 @@ void VulkanEngine::init_swapchain() {
     auto vkbSwapchain = swapchainBuilder
                             .use_default_format_selection()
                             // An easy way to limit FPS for now.
-                            .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+                            .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
                             // If you need to resize the window, the swapchain will need to be rebuilt.
                             .set_desired_extent(windowExtent.width, windowExtent.height)
                             .build()
@@ -248,6 +248,7 @@ void VulkanEngine::init_commands() {
     // Create a command pool for commands submitted to the graphics queue.
     // We want the pool to allow the resetting of individual command buffers.
     auto commandPoolInfo = vkinit::command_pool_create_info(graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    auto uploadCommandPoolInfo = vkinit::command_pool_create_info(graphicsQueueFamily);
 
     for (auto &frame: frames) {
         VK_CHECK(vkCreateCommandPool(device, &commandPoolInfo, nullptr, &frame.commandPool));
@@ -258,6 +259,16 @@ void VulkanEngine::init_commands() {
 
         mainDeletionQueue.push([=, this]() { vkDestroyCommandPool(device, frame.commandPool, nullptr); });
     }
+
+    // Create pool for upload context
+    VK_CHECK(vkCreateCommandPool(device, &uploadCommandPoolInfo, nullptr, &uploadContext.commandPool));
+
+    mainDeletionQueue.push([=, this]() { vkDestroyCommandPool(device, uploadContext.commandPool, nullptr); });
+
+    // Allocate the default command buffer that we will use for the instant commands
+    auto instantCommandAllocateInfo = vkinit::command_buffer_allocate_info(uploadContext.commandPool, 1);
+    VK_CHECK(vkAllocateCommandBuffers(device, &instantCommandAllocateInfo, &uploadContext.commandBuffer));
+
 }
 
 
@@ -382,6 +393,10 @@ void VulkanEngine::init_sync_structures() {
     // GPU command (for the first frame)
     auto fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
     auto semaphoreCreateInfo = vkinit::semaphore_create_info();
+    auto uploadFenceCreateInfo = vkinit::fence_create_info();
+
+    VK_CHECK(vkCreateFence(device, &uploadFenceCreateInfo, nullptr, &uploadContext.uploadFence));
+    mainDeletionQueue.push([=, this]() { vkDestroyFence(device, uploadContext.uploadFence, nullptr); });
 
     for (auto &frame: frames) {
         // --- Create Fence ---
@@ -583,30 +598,66 @@ void VulkanEngine::load_meshes() {
 
 
 void VulkanEngine::upload_mesh(Mesh &mesh) {
-    // Allocate vertex buffer
-    VkBufferCreateInfo bufferInfo = {
+    const auto bufferSize = mesh.vertices.size() * sizeof(Vertex);
+    VmaAllocationCreateInfo vmaAllocInfo = {};
+
+    // --- CPU-side Buffer Allocation ---
+    // Create staging buffer to hold the mesh data before uploading to GPU buffer. Buffer will only be used as the
+    // source for transfer commands (no rendering) via `VK_BUFFER_USAGE_TRANSFER_SRC_BIT`.
+    VkBufferCreateInfo stagingBufferInfo = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = mesh.vertices.size() * sizeof(Vertex), // The total size, in bytes, of the buffer to allocate
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,    // Buffer is to be used as vertex buffer
+        .pNext = nullptr,
+        .size = bufferSize,
+        .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     };
 
-    // Let the VMA library know that this data should be writable only by CPU, but readable by GPU
-    VmaAllocationCreateInfo vmaAllocInfo = {.usage = VMA_MEMORY_USAGE_CPU_TO_GPU};
+    // Let VMA know that this data should be on CPU RAM.
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
 
-    // Allocate the buffer
-    VK_CHECK(vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocInfo, &mesh.vertexBuffer.buffer, &mesh.vertexBuffer.allocation, nullptr));
+    AllocatedBuffer stagingBuffer{};
+    // Allocate the buffer.
+    VK_CHECK(vmaCreateBuffer(allocator, &stagingBufferInfo, &vmaAllocInfo,
+                             &stagingBuffer.buffer, &stagingBuffer.allocation, nullptr));
+
+    // To push data into a VkBuffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
+    // done with writing the data, we can unmap. We copy the mesh vertex data into the buffer.
+    void *vertexData;
+    vmaMapMemory(allocator, stagingBuffer.allocation, &vertexData);
+    memcpy(vertexData, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+    vmaUnmapMemory(allocator, stagingBuffer.allocation);
+
+    // --- GPU-side Buffer Allocation ---
+    // Allocate the vertex buffer--we signify that the buffer will be used as vertex buffer so that the driver knows
+    // we will use it to render meshes and to copy data into.
+    VkBufferCreateInfo vertexBufferInfo = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .size = bufferSize,
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+
+    // Let the VMA library know that this data should be GPU native.
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    // Allocate the buffer.
+    VK_CHECK(vmaCreateBuffer(allocator, &vertexBufferInfo, &vmaAllocInfo,
+                             &mesh.vertexBuffer.buffer, &mesh.vertexBuffer.allocation, nullptr));
+
+    // Execute the copy command, enqueuing a `vkCmdCopyBuffer()` command
+    immediate_submit([=](VkCommandBuffer commandBuffer) {
+        VkBufferCopy copy = {
+            .srcOffset = 0,
+            .dstOffset = 0,
+            .size = bufferSize,
+        };
+        vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer, mesh.vertexBuffer.buffer, 1, &copy);
+    });
 
     // Add the destruction of the triangle mesh buffer to the deletion queue
     mainDeletionQueue.push([=, this]() {
         vmaDestroyBuffer(allocator, mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
     });
-
-    // To push data into a VkBuffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
-    // done with writing the data, we can unmap.
-    void *vertexData;
-    vmaMapMemory(allocator, mesh.vertexBuffer.allocation, &vertexData);
-    memcpy(vertexData, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
-    vmaUnmapMemory(allocator, mesh.vertexBuffer.allocation);
+    vmaDestroyBuffer(allocator, stagingBuffer.buffer, stagingBuffer.allocation); // Delete immediately.
 }
 
 
@@ -906,6 +957,34 @@ size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) const {
     if (minOffsetAlignment > 0)
         alignedSize = (alignedSize + minOffsetAlignment - 1) & ~(minOffsetAlignment - 1);
     return alignedSize;
+}
+
+
+void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer commandBuffer)> &&function) {
+    // This is similar logic to the render loop (i.e., reusing the same command buffer from frame to frame).
+    // If we wanted to submit multiple command buffers, we would simply allocate as many as we needed ahead of time.
+
+    // We first allocate command buffer, we then call the function between begin/end command buffer, and then we submit it.
+    // Then we wait for the submit to be finished, and reset the command pool.
+    auto commandBuffer = uploadContext.commandBuffer;
+
+    // Begin the command buffer recording. We will use this command buffer exactly once before resetting.
+    auto commandBufferBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
+
+    // Execute the function
+    function(commandBuffer);
+    VK_CHECK(vkEndCommandBuffer(commandBuffer));
+
+    auto submitInfo = vkinit::submit_info(&commandBuffer);
+    // Submit command buffer to the queue and execute it. `uploadFence` will now block until the graphics commands finish.
+    VK_CHECK(vkQueueSubmit(graphicsQueue, 1, &submitInfo, uploadContext.uploadFence));
+
+    vkWaitForFences(device, 1, &uploadContext.uploadFence, true, 1E11);
+    vkResetFences(device, 1, &uploadContext.uploadFence);
+
+    // Reset the command buffers within the command pool.
+    vkResetCommandPool(device, uploadContext.commandPool, 0);
 }
 
 

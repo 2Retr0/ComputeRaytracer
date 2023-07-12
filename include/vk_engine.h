@@ -114,6 +114,14 @@ struct FrameData {
 };
 
 
+/** Abstraction for short-lived commands (e.g., copying meshes from a CPU -> GPU buffer). Stores upload-related structs. */
+struct UploadContext {
+    VkFence uploadFence;
+    VkCommandPool commandPool;
+    VkCommandBuffer commandBuffer;
+};
+
+
 class VulkanEngine {
 public:
     /** Initializes everything in the engine. */
@@ -165,6 +173,7 @@ public:
     // --- Memory ---
     DeletionQueue mainDeletionQueue;
     VmaAllocator allocator;
+    UploadContext uploadContext;
 
     // --- Scene Management ---
     std::vector<RenderObject> renderables;
@@ -229,4 +238,6 @@ private:
     Mesh *get_mesh(const std::string &name);
 
     FrameData &get_current_frame();
+
+    void immediate_submit(std::function<void(VkCommandBuffer commandBuffer)> &&function);
 };
