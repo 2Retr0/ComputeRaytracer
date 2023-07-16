@@ -2,17 +2,16 @@
 #include "vk_initializers.h"
 #include "vk_textures.h"
 
-#include "VkBootstrap.h"
-#include "VkBootstrapDispatch.h"
-#include "imgui.h"
-#include "imgui_impl_sdl2.h"
-#include "imgui_impl_vulkan.h"
+#include <imgui.h>
+#include <imgui_impl_sdl2.h>
+#include <imgui_impl_vulkan.h>
+#include <SDL.h>
+#include <SDL_vulkan.h>
+#include <VkBootstrap.h>
+#include <VkBootstrapDispatch.h>
 
 #define VMA_IMPLEMENTATION
-#include "vk_mem_alloc.h"
-
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_vulkan.h>
+#include <vk_mem_alloc.h>
 
 #include <fstream>
 #include <iostream>
@@ -812,8 +811,7 @@ void VulkanEngine::init_imgui() {
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}
-    };
+        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
 
     VkDescriptorPoolCreateInfo poolInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,

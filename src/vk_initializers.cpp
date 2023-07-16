@@ -1,4 +1,4 @@
-#include <vk_initializers.h>
+#include "vk_initializers.h"
 
 VkCommandPoolCreateInfo vkinit::command_pool_create_info(
     uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags /*= 0*/) {
@@ -319,7 +319,7 @@ VkSamplerCreateInfo vkinit::sampler_create_info(VkFilter filters, VkSamplerAddre
 }
 
 
-VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo* imageInfo, uint32_t binding) {
+VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo *imageInfo, uint32_t binding) {
     return {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .pNext = nullptr,

@@ -1,10 +1,10 @@
 #include "vk_textures.h"
 #include "vk_initializers.h"
 
-#include <iostream>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+#include <iostream>
 
 bool vkutil::load_image_from_file(VulkanEngine &engine, const char *path, AllocatedImage &outputImage) {
     // --- Load File ---
@@ -44,7 +44,7 @@ bool vkutil::load_image_from_file(VulkanEngine &engine, const char *path, Alloca
     auto depthImageInfo = vkinit::image_create_info(imageFormat, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, imageExtent);
 
     AllocatedImage newImage = {};
-    VmaAllocationCreateInfo depthImageAllocInfo = { .usage = VMA_MEMORY_USAGE_GPU_ONLY };
+    VmaAllocationCreateInfo depthImageAllocInfo = {.usage = VMA_MEMORY_USAGE_GPU_ONLY};
 
     // Allocate and create the image
     vmaCreateImage(engine.allocator, &depthImageInfo, &depthImageAllocInfo, &newImage.image, &newImage.allocation, nullptr);
@@ -56,9 +56,9 @@ bool vkutil::load_image_from_file(VulkanEngine &engine, const char *path, Alloca
         VkImageSubresourceRange range = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
-            .levelCount = 1,     // No mipmaps
+            .levelCount = 1, // No mipmaps
             .baseArrayLayer = 0,
-            .layerCount = 1,     // No layered textures
+            .layerCount = 1, // No layered textures
         };
 
         // To perform layout transitions, we need to use pipeline barriers. Pipeline barriers can control how the GPU

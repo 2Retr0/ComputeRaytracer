@@ -1,19 +1,35 @@
 {
-    "name" : "vulkantest2",
-    "version-string" : "1.0.0",
-    "builtin-baseline" : "fba81a6a545a66ef3de3a2d36c355f687f72a6b4",
-    "dependencies" : [ {
-        "name" : "lz4",
-        "version>=" : "1.9.4#1"
-    }, {
-        "name" : "nlohmann-json",
-        "version>=" : "3.11.2"
-    }, {
-        "name" : "imgui",
-        "version>=" : "1.89.7",
-        "features": [
-            "vulkan-binding",
-            "sdl2-binding"
-        ]
-    } ]
+  "name" : "vulkantest2",
+  "version-string" : "1.0.0",
+  "builtin-baseline" : "fba81a6a545a66ef3de3a2d36c355f687f72a6b4",
+  "dependencies" : [ {
+    "name" : "lz4",
+    "version>=" : "1.9.4#1"
+  }, {
+    "name" : "nlohmann-json",
+    "version>=" : "3.11.2"
+  }, {
+    "name" : "imgui",
+    "version>=" : "1.89.7",
+    "features" : [ "vulkan-binding", "sdl2-binding" ]
+  }, {
+    "name" : "vk-bootstrap",
+    "version>=" : "0.7#1"
+  }, {
+    "name" : "sdl2",
+    "version>=" : "2.26.5",
+    "features" : [ "vulkan" ]
+  }, {
+    "name" : "tinyobjloader",
+    "version>=" : "2.0.0-rc9"
+  }, {
+    "name" : "stb",
+    "version>=" : "2023-04-11#1"
+  }, {
+    "name" : "vulkan-memory-allocator",
+    "version>=" : "3.0.1#3"
+  }, {
+    "name" : "glm",
+    "version>=" : "0.9.9.8#2"
+  } ]
 }
