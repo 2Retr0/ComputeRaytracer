@@ -29,19 +29,15 @@ target_include_directories(tinyobjloader PUBLIC tinyobjloader)
 
 
 add_library(sdl2 INTERFACE)
-set(PATH_SDL2 "SDL_PATH" CACHE PATH "Path to SDL2")
 
 if (APPLE)
     set(PATH_SDL2 $ENV{HOMEBREW_PREFIX})
+else()
+    set(PATH_SDL2 $ENV{SDL_PATH})
 endif()
 
-if (WIN32)
-    target_include_directories(sdl2 INTERFACE ${PATH_SDL2}/include ${PATH_SDL2_IMAGE}/include)
-    target_link_directories(sdl2 INTERFACE ${PATH_SDL2}/lib/x64 ${PATH_SDL2_IMAGE}/lib/x64)
-elseif (UNIX)
-    target_include_directories(sdl2 INTERFACE ${PATH_SDL2}/include/SDL2 ${PATH_SDL2_IMAGE}/include/SDL2)
-    target_link_directories(sdl2 INTERFACE ${PATH_SDL2}/lib ${PATH_SDL2_IMAGE}/lib)
-endif()
+target_include_directories(sdl2 INTERFACE ${PATH_SDL2}/include/SDL2 ${PATH_SDL2_IMAGE}/include/SDL2)
+target_link_directories(sdl2 INTERFACE ${PATH_SDL2}/lib ${PATH_SDL2_IMAGE}/lib)
 
 target_link_libraries(sdl2 INTERFACE SDL2 SDL2main)
 

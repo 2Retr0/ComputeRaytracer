@@ -1,10 +1,12 @@
 #version 460
 
-layout (location = 0) in vec3 vecPosition;
-layout (location = 1) in vec3 vecNormal;
-layout (location = 2) in vec3 vecColor;
+layout (location = 0) in vec3 vPosition;
+layout (location = 1) in vec3 vNormal;
+layout (location = 2) in vec3 vColor;
+layout (location = 3) in vec2 vTexCoord;
 
 layout (location = 0) out vec3 outColor;
+layout (location = 1) out vec2 texCoord;
 
 // Binding 0 within descriptor set at slot 0.
 layout (set = 0, binding = 0) uniform CameraBuffer {
@@ -38,6 +40,8 @@ void main() {
     // us a way to send a single integer to the shader without setting up push constants/descriptors.
     mat4 modelMatrix = objectBuffer.objects[gl_BaseInstance].model;
     mat4 transformMatrix = cameraData.viewProjection * modelMatrix;
-    gl_Position = transformMatrix * vec4(vecPosition, 1.0);
-    outColor = vecColor;
+    gl_Position = transformMatrix * vec4(vPosition, 1.0);
+
+    outColor = vColor;
+    texCoord = vTexCoord;
 }

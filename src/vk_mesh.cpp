@@ -35,9 +35,17 @@ VertexInputDescription Vertex::get_vertex_description() {
         .offset = offsetof(Vertex, color),
     };
 
+    VkVertexInputAttributeDescription uvAttribute = {
+        .location = 3, // UV will be stored at Location 3
+        .binding = 0,
+        .format = VK_FORMAT_R32G32_SFLOAT,
+        .offset = offsetof(Vertex, uv),
+    };
+
     description.attributes.push_back(positionAttribute);
     description.attributes.push_back(normalAttribute);
     description.attributes.push_back(colorAttribute);
+    description.attributes.push_back(uvAttribute);
     return description;
 }
 
@@ -67,10 +75,10 @@ bool Mesh::load_from_obj(const char *path, const char *baseDirectory /*= nullptr
         return false;
     }
 
-    size_t shapeOffset = 0;
     for (auto &shape : shapes) {
-        for (size_t faceIndex = 0; faceIndex < shape.mesh.num_face_vertices.size(); faceIndex++) {
-            for (size_t vertexIndex = 0; vertexIndex < faceVertices; vertexIndex++) {
+        auto shapeOffset = 0;
+        for (auto faceIndex = 0; faceIndex < shape.mesh.num_face_vertices.size(); faceIndex++) {
+            for (auto vertexIndex = 0; vertexIndex < faceVertices; vertexIndex++) {
                 tinyobj::index_t idx = shape.mesh.indices[shapeOffset + vertexIndex];
 
                 tinyobj::real_t vertex_x = attributes.vertices[3 * idx.vertex_index + 0];
@@ -81,10 +89,14 @@ bool Mesh::load_from_obj(const char *path, const char *baseDirectory /*= nullptr
                 tinyobj::real_t normal_y = attributes.normals[3 * idx.normal_index + 1];
                 tinyobj::real_t normal_z = attributes.normals[3 * idx.normal_index + 2];
 
-                Vertex newVertex{};
+                tinyobj::real_t ux = attributes.texcoords[2 * idx.texcoord_index + 0];
+                tinyobj::real_t uy = attributes.texcoords[2 * idx.texcoord_index + 1];
+
+                Vertex newVertex = {};
                 newVertex.position = {vertex_x, vertex_y, vertex_z};
                 newVertex.normal = {normal_x, normal_y, normal_z};
                 newVertex.color = newVertex.normal; // For display purposes only!
+                newVertex.uv = {ux, 1 - uy};        // Note: Need to use `1 - uy` for Vulkan format!
 
                 vertices.push_back(newVertex);
             }

@@ -56,6 +56,7 @@ struct MeshPushConstants {
 
 
 struct Material {
+    VkDescriptorSet textureSet = {VK_NULL_HANDLE};
     // Note: We store `VkPipeline` and layout by value, not pointer. They are 64-bit handles to internal driver
     //       structures anyway, so storing pointers to them isn't very useful.
     VkPipeline pipeline;
@@ -122,6 +123,13 @@ struct UploadContext {
 };
 
 
+struct Texture {
+    AllocatedImage image;
+    VkImageView imageView;
+};
+
+
+
 class VulkanEngine {
 public:
     /** Initializes everything in the engine. */
@@ -136,6 +144,10 @@ public:
     /** Run the main loop. */
     void run();
 
+    AllocatedBuffer create_buffer(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage memoryUsage) const;
+
+    void immediate_submit(std::function<void(VkCommandBuffer commandBuffer)> &&function);
+
 public:
     // --- Window ---
     bool isInitialized = false;
@@ -143,7 +155,7 @@ public:
     int animationFrameNumber = 0;
     VkExtent2D windowExtent = {1280, 800}; // The width and height of the window (px)
     struct SDL_Window *window = nullptr;   // Forward-declaration for the window
-    uint32_t ticksMs = 0;
+    uint64_t ticksMs = 0;
 
     // --- Vulkan ---
     VkInstance instance;                      // Vulkan library handle
@@ -196,6 +208,10 @@ public:
     VkDescriptorPool descriptorPool;
     VkDescriptorSet globalDescriptor;
 
+    // --- Textures ---
+    std::unordered_map<std::string, Texture> loadedTextures;
+    VkDescriptorSetLayout singleTextureSetLayout;
+
 private:
     void init_vulkan();
 
@@ -216,8 +232,12 @@ private:
 
     void init_descriptors();
 
+    void init_imgui();
+
     /** Loads a shader module from a spir-v file. Returns false if it errors. */
     bool load_shader_module(const char *filePath, VkShaderModule *outShaderModule) const;
+
+    void load_images();
 
     void load_meshes();
 
@@ -228,8 +248,6 @@ private:
     /** Creates a material and adds it to a map. */
     Material *create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string &name);
 
-    AllocatedBuffer create_buffer(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage memoryUsage) const;
-
     size_t pad_uniform_buffer_size(size_t originalSize) const;
 
     /** Returns `nullptr` if the material cannot be found. */
@@ -239,6 +257,4 @@ private:
     Mesh *get_mesh(const std::string &name);
 
     FrameData &get_current_frame();
-
-    void immediate_submit(std::function<void(VkCommandBuffer commandBuffer)> &&function);
 };

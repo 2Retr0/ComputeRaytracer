@@ -1,0 +1,19 @@
+{
+    "name" : "vulkantest2",
+    "version-string" : "1.0.0",
+    "builtin-baseline" : "fba81a6a545a66ef3de3a2d36c355f687f72a6b4",
+    "dependencies" : [ {
+        "name" : "lz4",
+        "version>=" : "1.9.4#1"
+    }, {
+        "name" : "nlohmann-json",
+        "version>=" : "3.11.2"
+    }, {
+        "name" : "imgui",
+        "version>=" : "1.89.7",
+        "features": [
+            "vulkan-binding",
+            "sdl2-binding"
+        ]
+    } ]
+}
