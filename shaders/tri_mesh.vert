@@ -7,6 +7,7 @@ layout (location = 3) in vec2 vTexCoord;
 
 layout (location = 0) out vec3 outColor;
 layout (location = 1) out vec2 texCoord;
+layout (location = 2) out vec3 normalWorldSpace;
 
 // Binding 0 within descriptor set at slot 0.
 layout (set = 0, binding = 0) uniform CameraBuffer {
@@ -41,6 +42,8 @@ void main() {
     mat4 modelMatrix = objectBuffer.objects[gl_BaseInstance].model;
     mat4 transformMatrix = cameraData.viewProjection * modelMatrix;
     gl_Position = transformMatrix * vec4(vPosition, 1.0);
+
+    normalWorldSpace = normalize(mat3(modelMatrix) * vNormal);
 
     outColor = vColor;
     texCoord = vTexCoord;

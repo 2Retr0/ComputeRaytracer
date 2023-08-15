@@ -160,6 +160,7 @@ public:
     vk::Extent2D windowExtent = {1280, 800}; // The width and height of the window (px)
     struct SDL_Window *window;               // Forward-declaration for the window
     uint64_t ticksMs = 0;
+    int fps = 0;
 
     // --- Vulkan ---
     vk::raii::Context context;

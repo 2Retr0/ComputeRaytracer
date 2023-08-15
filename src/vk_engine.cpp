@@ -652,12 +652,12 @@ void VulkanEngine::init_scene() {
         }
     }
 
-    RenderObject map = {
-        .mesh = get_mesh("empire"),
-        .material = get_material("texturedmesh"),
-        .transformMatrix = glm::translate(glm::vec3 {5, -10, 0}),
-    };
-    renderables.push_back(map);
+//    RenderObject map = {
+//        .mesh = get_mesh("empire"),
+//        .material = get_material("texturedmesh"),
+//        .transformMatrix = glm::translate(glm::vec3 {5, -10, 0}),
+//    };
+//    renderables.push_back(map);
 
     // --- Textures ---
     auto *texturedMaterial = get_material("texturedmesh");
@@ -674,8 +674,8 @@ void VulkanEngine::init_scene() {
     // Write the descriptor set so that it points to our empire_diffuse texture
     auto imageBufferInfo = vk::DescriptorImageInfo(
         *blockySampler, *loadedTextures["empire_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-    auto textureWrite = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial->textureSet, &imageBufferInfo, 0);
-    device.updateDescriptorSets({textureWrite}, nullptr);
+//    auto textureWrite = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial->textureSet, &imageBufferInfo, 0);
+//    device.updateDescriptorSets({textureWrite}, nullptr);
 
     imageBufferInfo.imageView = *loadedTextures["fumo_diffuse"].imageView;
     auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
@@ -769,9 +769,10 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
 
     // --- Writing Scene Data ---
     auto cameraParameters = GPUCameraData(view, projection, projection * view);
-    auto framed = static_cast<float>(animationFrameNumber) / 120.f;
+    auto framed = static_cast<float>(animationFrameNumber) / 30.f;
     auto frameIndex = frameNumber % FRAME_OVERLAP;
     sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
+    sceneParameters.sunlightDirection = {sin(framed) * 3.0, 2.0, cos(framed) * 3.0, 0.1};
 
     uint8_t *sceneData;
     VK_CHECK(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData));
@@ -906,8 +907,7 @@ void VulkanEngine::init_descriptors() {
     // they are very fast to access in the shaders.
     // Due to alignment, we will have to increase the size of the buffer so that it fits two padded `GPUSceneData` and
     // `GPUCameraData` structs.
-    sceneParameterBuffer = AllocatedBuffer(
-        create_buffer(SCENE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu));
+    sceneParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
 
     for (auto &frame : frames) {
         // With storage buffers, you can have an unsized array in a shader with whatever data you want. A common use
@@ -1087,14 +1087,15 @@ void VulkanEngine::run() {
 
     // Main loop
     while (!shouldQuit) {
+        // --- Handle Input ---
         // Handle all events the OS has sent to the application since the last frame.
         while (SDL_PollEvent(&windowEvent) != 0) {
             ImGui_ImplSDL2_ProcessEvent(&windowEvent);
             switch (windowEvent.type) {
                 case SDL_KEYDOWN:
-                    //                    switch (windowEvent.key.keysym.sym) {
-                    //                        default:
-                    //                    }
+//                    switch (windowEvent.key.keysym.sym) {
+//                        default:
+//                    }
                     break;
                 case SDL_MOUSEBUTTONDOWN:
                     // Refresh relative mouse coordinates before motion is handled.
@@ -1107,22 +1108,36 @@ void VulkanEngine::run() {
             }
         }
 
+        // --- Draw ---
         auto startTicksMs = ticksMs;
-
         // ImGui new frame
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
 
         // ImGui commands--we can call ImGui functions between `Imgui::NewFrame()` and `draw()`
-        ImGui::ShowDemoWindow();
+        ImGui::Begin("VulkanTest2");
+        ImGui::Text("FPS: %d", fps);
+        ImGui::End();
 
         draw();
 
+        // --- Update FPS and Animation Timer ---
         ticksMs = SDL_GetTicks64();
-        auto frameTimeMs = ticksMs - startTicksMs;
-        auto moveSensitivity = 0.25f * (static_cast<float>(frameTimeMs) / 17.0f); // This breaks down past 1000Hz!
+        // Update FPS counter
+        if (ticksMs >= fpsUpdateTimeoutMs) {
+            fps = frameNumber - lastFrameNumber;
+            lastFrameNumber = frameNumber;
+            fpsUpdateTimeoutMs = ticksMs + 1000; // Update timeout timer.
+        }
 
+        if (ticksMs >= animationUpdateTimeoutMs) {
+            animationUpdateTimeoutMs = ticksMs + 17;
+            animationFrameNumber++;
+        }
+
+        // --- Movement Calculations ---
+        auto moveSensitivity = 0.25f * (static_cast<float>(ticksMs - startTicksMs) / 17.0f); // This breaks down past 1000Hz!
         // Handle continuously-held key input for movement.
         auto *keyStates = SDL_GetKeyboardState(nullptr);
         camera += static_cast<float>(keyStates[SDL_SCANCODE_W]) * moveSensitivity * forward;
@@ -1143,21 +1158,6 @@ void VulkanEngine::run() {
 
             forward = rotate * forward;
             left = glm::cross(up, forward);
-        }
-
-        // Update FPS counter
-        if (ticksMs >= fpsUpdateTimeoutMs) {
-            auto fps = frameNumber - lastFrameNumber;
-            auto windowTitle = std::string("VulkanTest2") + (useValidationLayers ? " (DEBUG)" : "") + " (FPS: " + std::to_string(fps) + ")";
-            SDL_SetWindowTitle(window, windowTitle.c_str());
-
-            lastFrameNumber = frameNumber;
-            fpsUpdateTimeoutMs = ticksMs + 1000; // Update timeout timer.
-        }
-
-        if (ticksMs >= animationUpdateTimeoutMs) {
-            animationUpdateTimeoutMs = ticksMs + 17;
-            animationFrameNumber++;
         }
     }
 }
