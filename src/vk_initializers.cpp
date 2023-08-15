@@ -1,89 +1,68 @@
 #include "vk_initializers.h"
 
-VkCommandPoolCreateInfo vkinit::command_pool_create_info(
-    uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags /*= 0*/) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = flags,
-        .queueFamilyIndex = queueFamilyIndex,
-    };
+vk::CommandPoolCreateInfo vkinit::command_pool_create_info(uint32_t queueFamilyIndex, vk::CommandPoolCreateFlags flags /*= 0*/) {
+    auto info = vk::CommandPoolCreateInfo();
+    info.flags = flags;
+    info.queueFamilyIndex = queueFamilyIndex;
+
+    return info;
 }
 
-VkCommandBufferAllocateInfo vkinit::command_buffer_allocate_info(
-    VkCommandPool pool, uint32_t count /*= 1*/, VkCommandBufferLevel level /*= VK_COMMAND_BUFFER_LEVEL_PRIMARY*/) {
-    // Primary command buffers have commands sent into a `VkQueue` to do work.
+vk::CommandBufferAllocateInfo vkinit::command_buffer_allocate_info(vk::CommandPool pool, uint32_t count /*= 1*/, vk::CommandBufferLevel level /*= VK_COMMAND_BUFFER_LEVEL_PRIMARY*/) {
+    // Primary command buffers have commands sent into a `vk::Queue` to do work.
     // Secondary command buffer level is mostly used in advanced multithreading scenarios with 'subcommands'.
-    return {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .commandPool = pool,
-        .level = level,
-        .commandBufferCount = count,
-    };
+    auto info = vk::CommandBufferAllocateInfo();
+    info.commandPool = pool;
+    info.level = level;
+    info.commandBufferCount = count;
+
+    return info;
 }
 
 
-VkCommandBufferBeginInfo vkinit::command_buffer_begin_info(VkCommandBufferUsageFlags flags /**= 0*/) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = nullptr,
-        .flags = flags,
-        .pInheritanceInfo = nullptr,
-    };
+vk::CommandBufferBeginInfo vkinit::command_buffer_begin_info(vk::CommandBufferUsageFlags flags /**= {}*/) {
+    auto info = vk::CommandBufferBeginInfo();
+    info.flags = flags;
+    info.pInheritanceInfo = nullptr;
+
+    return info;
 }
 
 
-VkFramebufferCreateInfo vkinit::framebuffer_create_info(VkRenderPass renderpass, VkExtent2D extent) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .renderPass = renderpass,
-        .attachmentCount = 1,
-        .width = extent.width,
-        .height = extent.height,
-        .layers = 1,
-    };
+vk::FramebufferCreateInfo vkinit::framebuffer_create_info(vk::RenderPass renderpass, vk::Extent2D extent) {
+    auto info = vk::FramebufferCreateInfo();
+    info.renderPass = renderpass;
+    info.attachmentCount = 1;
+    info.width = extent.width;
+    info.height = extent.height;
+    info.layers = 1;
+
+    return info;
 }
 
 
-VkSubmitInfo vkinit::submit_info(VkCommandBuffer *commandBuffer) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = nullptr,
-        .waitSemaphoreCount = 0,
-        .pWaitSemaphores = nullptr,
-        .pWaitDstStageMask = nullptr,
-        .commandBufferCount = 1,
-        .pCommandBuffers = commandBuffer,
-        .signalSemaphoreCount = 0,
-        .pSignalSemaphores = nullptr,
-    };
+vk::SubmitInfo vkinit::submit_info(const vk::CommandBuffer *commandBuffer) {
+    auto info = vk::SubmitInfo();
+    info.waitSemaphoreCount = 0;
+    info.commandBufferCount = 1;
+    info.pCommandBuffers = commandBuffer;
+    info.signalSemaphoreCount = 0;
+
+    return info;
 }
 
 
-VkPresentInfoKHR vkinit::present_info() {
-    return {
-        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-        .pNext = nullptr,
-        .waitSemaphoreCount = 0,
-        .pWaitSemaphores = nullptr,
-        .swapchainCount = 0,
-        .pSwapchains = nullptr,
-        .pImageIndices = nullptr,
-    };
+vk::PresentInfoKHR vkinit::present_info() {
+    return {};
 }
 
 
-VkRenderPassBeginInfo vkinit::renderpass_begin_info(VkRenderPass renderpass, VkExtent2D windowExtent, VkFramebuffer framebuffer) {
-    VkRenderPassBeginInfo info = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .pNext = nullptr,
-        .renderPass = renderpass,
-        .framebuffer = framebuffer,
-        .clearValueCount = 1,
-        .pClearValues = nullptr,
-    };
+vk::RenderPassBeginInfo vkinit::renderpass_begin_info(vk::RenderPass renderpass, vk::Extent2D windowExtent, vk::Framebuffer framebuffer) {
+    auto info = vk::RenderPassBeginInfo();
+    info.renderPass = renderpass;
+    info.framebuffer = framebuffer;
+    info.clearValueCount = 1;
+    info.pClearValues = nullptr;
     info.renderArea.offset.x = 0;
     info.renderArea.offset.y = 0;
     info.renderArea.extent = windowExtent;
@@ -92,125 +71,97 @@ VkRenderPassBeginInfo vkinit::renderpass_begin_info(VkRenderPass renderpass, VkE
 }
 
 
-VkPipelineShaderStageCreateInfo vkinit::pipeline_shader_stage_create_info(
-    VkShaderStageFlagBits stage, VkShaderModule shaderModule) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .pNext = nullptr,
-        .stage = stage,         // Shader stage
-        .module = shaderModule, // Module containing the code for this shader stage
-        .pName = "main",        // The entry point of the shader
-    };
+vk::PipelineShaderStageCreateInfo vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits stage, vk::ShaderModule shaderModule) {
+    auto info = vk::PipelineShaderStageCreateInfo();
+    info.stage = stage;         // Shader stage
+    info.module = shaderModule; // Module containing the code for this shader stage
+    info.pName = "main";        // The entry point of the shader
+
+    return info;
 }
 
 
-VkPipelineVertexInputStateCreateInfo vkinit::vertex_input_state_create_info() {
-    return {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        // No vertex bindings or attributes
-        .vertexBindingDescriptionCount = 0,
-        .vertexAttributeDescriptionCount = 0,
-    };
+vk::PipelineVertexInputStateCreateInfo vkinit::vertex_input_state_create_info() {
+    return {}; // No vertex bindings or attributes
 }
 
 
-VkPipelineInputAssemblyStateCreateInfo vkinit::input_assembly_create_info(VkPrimitiveTopology topology) {
+vk::PipelineInputAssemblyStateCreateInfo vkinit::input_assembly_create_info(vk::PrimitiveTopology topology) {
     // --- Example Topologies ---
     // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: Normal triangle drawing
     // VK_PRIMITIVE_TOPOLOGY_POINT_LIST:    Points
     // VK_PRIMITIVE_TOPOLOGY_LINE_LIST:     Line-list
-    return {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .topology = topology,
-        .primitiveRestartEnable = VK_FALSE, // We are not going to use primitive restart for this tutorial.
-    };
+    auto info = vk::PipelineInputAssemblyStateCreateInfo();
+    info.topology = topology;
+    info.primitiveRestartEnable = VK_FALSE; // We are not going to use primitive restart for this tutorial.
+
+    return info;
 }
 
 
-VkPipelineRasterizationStateCreateInfo vkinit::rasterization_state_create_info(VkPolygonMode polygonMode) {
+vk::PipelineRasterizationStateCreateInfo vkinit::rasterization_state_create_info(vk::PolygonMode polygonMode) {
     // If `rasterizerDiscardEnable` is enabled, primitives (triangles in our case) are discarded before even
     // making it to the rasterization stage, which means the triangles would never get drawn to the screen.
     // You might enable this, for example, if you’re only interested in the side effects of the vertex
     // processing stages, such as writing to a buffer which you later read from.
-    return {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE, // Discards all primitives before the rasterization stage if enabled.
-        .polygonMode = polygonMode,          // Input for toggling between wireframe and solid drawing.
-        .cullMode = VK_CULL_MODE_NONE,       // No backface culling
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE, // No depth bias
-        .depthBiasConstantFactor = 0.0f,
-        .depthBiasClamp = 0.0f,
-        .depthBiasSlopeFactor = 0.0f,
-        .lineWidth = 1.0f,
-    };
+    auto info = vk::PipelineRasterizationStateCreateInfo();
+    info.depthClampEnable = VK_FALSE;
+    info.rasterizerDiscardEnable = VK_FALSE;     // Discards all primitives before the rasterization stage if enabled.
+    info.polygonMode = info.polygonMode;         // Input for toggling between wireframe and solid drawing.
+    info.cullMode = vk::CullModeFlagBits::eNone; // No backface culling
+    info.frontFace = vk::FrontFace::eClockwise;
+    info.depthBiasEnable = VK_FALSE;             // No depth bias
+    info.depthBiasConstantFactor = 0.0f;
+    info.depthBiasClamp = 0.0f;
+    info.depthBiasSlopeFactor = 0.0f;
+    info.lineWidth = 1.0f;
+
+    return info;
 }
 
 
-VkPipelineMultisampleStateCreateInfo vkinit::multisampling_state_create_info() {
+vk::PipelineMultisampleStateCreateInfo vkinit::multisampling_state_create_info() {
     // We won't use MSAA for this tutorial.
-    return {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT, // Multisampling = 1 sample as we won't be doing MSAA
-        .sampleShadingEnable = VK_FALSE,
-        .minSampleShading = 1.0f,
-        .pSampleMask = nullptr,
-        .alphaToCoverageEnable = VK_FALSE,
-        .alphaToOneEnable = VK_FALSE,
-    };
+    auto info = vk::PipelineMultisampleStateCreateInfo();
+    info.sampleShadingEnable = VK_FALSE;
+    info.rasterizationSamples = vk::SampleCountFlagBits::e1; // 1 sample as we won't be doing MSAA
+    info.minSampleShading = 1.0f;
+    info.pSampleMask = nullptr;
+    info.alphaToCoverageEnable = VK_FALSE;
+    info.alphaToOneEnable = VK_FALSE;
+
+    return info;
 }
 
 
-VkPipelineColorBlendAttachmentState vkinit::color_blend_attachment_state() {
+vk::PipelineColorBlendAttachmentState vkinit::color_blend_attachment_state() {
     // We are rendering to only 1 attachment, so we will just need one of them, and defaulted to “not blend” and just
     // override. In here it’s possible to make objects that will blend with the image.
-    return {
-        .blendEnable = VK_FALSE,
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-    };
+    auto colorBlendAttachment = vk::PipelineColorBlendAttachmentState();
+    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR |vk::ColorComponentFlagBits::eG |
+                                          vk::ColorComponentFlagBits::eB |vk::ColorComponentFlagBits::eA;
+
+    return colorBlendAttachment;
 }
 
 
-VkPipelineLayoutCreateInfo vkinit::pipeline_layout_create_info() {
-    return {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
-
-        // Empty defaults
-        .flags = 0,
-        .setLayoutCount = 0,
-        .pSetLayouts = nullptr,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr,
-    };
+vk::PipelineLayoutCreateInfo vkinit::pipeline_layout_create_info() {
+    return {};
 }
 
 
-VkFenceCreateInfo vkinit::fence_create_info(VkFenceCreateFlags flags /*= 0*/) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = flags,
-    };
+vk::FenceCreateInfo vkinit::fence_create_info(vk::FenceCreateFlags flags /*= 0*/) {
+    return {flags};
 }
 
 
-VkSemaphoreCreateInfo vkinit::semaphore_create_info(VkSemaphoreCreateFlags flags /*= 0*/) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = flags,
-    };
+vk::SemaphoreCreateInfo vkinit::semaphore_create_info(vk::SemaphoreCreateFlags flags /*= 0*/) {
+    return {flags};
 }
 
 
-VkImageCreateInfo vkinit::image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent) {
+vk::ImageCreateInfo vkinit::image_create_info(vk::Format format, vk::ImageUsageFlags usageFlags, vk::Extent3D extent) {
     // Tiling describes how the data for the texture is arranged in the GPU. For improved performance, GPUs do not
     // store images as 2d arrays of pixels, but instead use complex custom formats, unique to the GPU brand and even
     // models.
@@ -218,115 +169,105 @@ VkImageCreateInfo vkinit::image_create_info(VkFormat format, VkImageUsageFlags u
     // VK_IMAGE_TILING_OPTIMAL: Let the driver decide how the GPU arranges the memory of the image.
     //                          This prevents reading from or writing to the CPU without changing the tiling first.
     // VK_IMAGE_TILING_LINEAR: Store image as 2D array of pixels (very slow!)
-    return {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext = nullptr,
-        .imageType = VK_IMAGE_TYPE_2D, // How many dimensions the image has
-        .format = format,              // What the data of the texture is (e.g., single float (for depth) or color)
-        .extent = extent,              // Size of the image, in pixels
-        .mipLevels = 1,
-        .arrayLayers = 1,                 // For layered textures (e.g., cubemaps which have 6 layers)
-        .samples = VK_SAMPLE_COUNT_1_BIT, // MSAA samples
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = usageFlags, // Controls how the GPU handles the image memory (must set properly!)
-    };
-}
-
-
-VkImageViewCreateInfo vkinit::imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags) {
-    // In vulkan you can’t use `VkImage` directly, the `VkImage` have to go through a `VkImageView`, which contains some
-    // information about how to treat the image. We build an image-view for the depth image to use for rendering
-
-    // The image has to point to the image this imageview is being created from. As `imageView`s 'wrap' an image, you
-    // need to point to the original one. The format has to match the format in the image this view was created from.
-    VkImageViewCreateInfo info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext = nullptr,
-        .image = image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D, // Or `VK_IMAGE_VIEW_TYPE_CUBE`, etc.
-        .format = format,
-    };
-    // subresourceRange holds the information about where the image points to. This is used for layered images, where
-    // you might have multiple layers in one image, and want to create an imageview that points to a specific layer.
-    info.subresourceRange = {
-        .aspectMask = aspectFlags, // Controls how the GPU handles the image memory (must set properly!)
-        .baseMipLevel = 0,
-        .levelCount = 1,
-        .baseArrayLayer = 0,
-        .layerCount = 1,
-    };
+    auto info = vk::ImageCreateInfo();
+    info.imageType = vk::ImageType::e2D;        // How many dimensions the image has
+    info.format = format;                       // What the data of the texture is (e.g., single float (for depth) or color)
+    info.extent = extent;
+    info.mipLevels = 1;
+    info.arrayLayers = 1;                       // For layered textures (e.g., cubemaps which have 6 layers)
+    info.samples = vk::SampleCountFlagBits::e1; // MSAA samples
+    info.tiling = vk::ImageTiling::eOptimal;
+    info.usage = usageFlags;                    // Controls how the GPU handles the image memory (must set properly!)
 
     return info;
 }
 
 
-VkPipelineDepthStencilStateCreateInfo vkinit::depth_stencil_create_info(
-    bool enableDepthTest, bool enableDepthWrite, VkCompareOp compareOperation) {
+vk::ImageViewCreateInfo vkinit::imageview_create_info(vk::Format format, vk::Image image, vk::ImageAspectFlags aspectFlags) {
+    // In vulkan you can’t use `vk::Image` directly, the `vk::Image` have to go through a `vk::ImageView`, which contains some
+    // information about how to treat the image. We build an image-view for the depth image to use for rendering
+    auto info = vk::ImageViewCreateInfo();
+    // The image has to point to the image this imageview is being created from. As `imageView`s 'wrap' an image, you
+    // need to point to the original one. The format has to match the format in the image this view was created from.
+    info.image = image;
+    info.viewType = vk::ImageViewType::e2D; // Or `VK_IMAGE_VIEW_TYPE_CUBE`, etc.
+    info.format = format;
+
+    // subresourceRange holds the information about where the image points to. This is used for layered images, where
+    // you might have multiple layers in one image, and want to create an imageview that points to a specific layer.
+    info.subresourceRange.aspectMask = aspectFlags; // Controls how the GPU handles the image memory (must set properly!)
+    info.subresourceRange.baseMipLevel = 0;
+    info.subresourceRange.levelCount = 1;
+    info.subresourceRange.baseArrayLayer = 0;
+    info.subresourceRange.layerCount = 1;
+
+    return info;
+}
+
+
+vk::PipelineDepthStencilStateCreateInfo vkinit::depth_stencil_create_info(bool enableDepthTest, bool enableDepthWrite, vk::CompareOp compareOperation) {
     // --- Example Depth Compare Operations ---
     // VK_COMPARE_OP_ALWAYS: Don't test depth at all.
     // VK_COMPARE_OP_LESS: Only draw if z < whatever is on the depth buffer.
     // VK_COMPARE_OP_EQUAL: Only draw if the z = whatever is on the depth buffer.
-    return {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .depthTestEnable = enableDepthTest ? VK_TRUE : VK_FALSE,   // Whether to enable z-culling
-        .depthWriteEnable = enableDepthWrite ? VK_TRUE : VK_FALSE, // Whether to write depth
-        .depthCompareOp = enableDepthTest ? compareOperation : VK_COMPARE_OP_ALWAYS,
-        .depthBoundsTestEnable = VK_FALSE,
-        .stencilTestEnable = VK_FALSE, // We aren't using stencil test
+    auto info = vk::PipelineDepthStencilStateCreateInfo();
+    info.depthTestEnable = enableDepthTest ? VK_TRUE : VK_FALSE;   // Whether to enable z-culling
+    info.depthWriteEnable = enableDepthWrite ? VK_TRUE : VK_FALSE; // Whether to write depth
+    info.depthCompareOp = enableDepthTest ? compareOperation : vk::CompareOp::eAlways;
+    info.depthBoundsTestEnable = VK_FALSE;
+    info.stencilTestEnable = VK_FALSE;                             // We aren't using stencil test
 
-        // If the depth is outside the bounds, the pixel will be skipped
-        .minDepthBounds = 0.0f, // Optional
-        .maxDepthBounds = 1.0f, // Optional
-    };
+    // If the depth is outside the bounds, the pixel will be skipped
+    info.minDepthBounds = 0.0f; // Optional
+    info.maxDepthBounds = 1.0f; // Optional
+
+    return info;
 }
 
 
-VkDescriptorSetLayoutBinding vkinit::descriptor_set_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding) {
-    return {
-        .binding = binding,
-        .descriptorType = type,
-        .descriptorCount = 1,
-        .stageFlags = stageFlags,
-        .pImmutableSamplers = nullptr,
-    };
+vk::DescriptorSetLayoutBinding vkinit::descriptor_set_layout_binding(vk::DescriptorType type, vk::ShaderStageFlags stageFlags, uint32_t binding) {
+    auto setBinding = vk::DescriptorSetLayoutBinding();
+    setBinding.binding = binding;
+    setBinding.descriptorType = type;
+    setBinding.descriptorCount = 1;
+    setBinding.stageFlags = stageFlags;
+    setBinding.pImmutableSamplers = nullptr;
+
+    return setBinding;
 }
 
 
-VkWriteDescriptorSet vkinit::write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet destinationSet, VkDescriptorBufferInfo *bufferInfo, uint32_t binding) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = nullptr,
-        .dstSet = destinationSet,
-        .dstBinding = binding,
-        .descriptorCount = 1,
-        .descriptorType = type,
-        .pBufferInfo = bufferInfo,
-    };
+vk::WriteDescriptorSet vkinit::write_descriptor_buffer(vk::DescriptorType type, vk::DescriptorSet destinationSet, vk::DescriptorBufferInfo *bufferInfo, uint32_t binding) {
+    auto write = vk::WriteDescriptorSet();
+    write.dstSet = destinationSet;
+    write.dstBinding = binding;
+    write.descriptorCount = 1;
+    write.descriptorType = type;
+    write.pBufferInfo = bufferInfo;
+
+    return write;
 }
 
 
-VkSamplerCreateInfo vkinit::sampler_create_info(VkFilter filters, VkSamplerAddressMode samplerAddressMode /*= VK_SAMPLER_ADDRESS_MODE_REPEAT*/) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .pNext = nullptr,
-        .magFilter = filters,
-        .minFilter = filters,
-        .addressModeU = samplerAddressMode,
-        .addressModeV = samplerAddressMode,
-        .addressModeW = samplerAddressMode,
-    };
+vk::SamplerCreateInfo vkinit::sampler_create_info(vk::Filter filters, vk::SamplerAddressMode samplerAddressMode /*= vk::SamplerAddressMode::eRepeat*/) {
+    auto write = vk::SamplerCreateInfo();
+    write.magFilter = filters;
+    write.minFilter = filters;
+    write.addressModeU = samplerAddressMode;
+    write.addressModeV = samplerAddressMode;
+    write.addressModeW = samplerAddressMode;
+
+    return write;
 }
 
 
-VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo *imageInfo, uint32_t binding) {
-    return {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = nullptr,
-        .dstSet = dstSet,
-        .dstBinding = binding,
-        .descriptorCount = 1,
-        .descriptorType = type,
-        .pImageInfo = imageInfo,
-    };
+vk::WriteDescriptorSet vkinit::write_descriptor_image(vk::DescriptorType type, vk::DescriptorSet dstSet, vk::DescriptorImageInfo *imageInfo, uint32_t binding) {
+    auto write = vk::WriteDescriptorSet();
+    write.dstSet = dstSet;
+    write.dstBinding = binding;
+    write.descriptorCount = 1;
+    write.descriptorType = type;
+    write.pImageInfo = imageInfo;
+
+    return write;
 }

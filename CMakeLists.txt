@@ -12,7 +12,7 @@ find_package(Vulkan REQUIRED)
 find_package(Stb REQUIRED)
 find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{VULKAN_SDK}/Bin/ $ENV{VULKAN_SDK}/Bin32/)
 
-set(PACKAGES sdl2 vk-bootstrap tinyobjloader imgui VulkanMemoryAllocator glm)
+set(PACKAGES sdl2 vk-bootstrap tinyobjloader imgui VulkanMemoryAllocator unofficial-vulkan-memory-allocator-hpp glm)
 foreach (package IN LISTS PACKAGES)
     find_package(${package} CONFIG REQUIRED)
 endforeach ()

@@ -13,6 +13,7 @@ set(LIBRARIES
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
         GPUOpen::VulkanMemoryAllocator
+        unofficial::VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
         glm::glm
         imgui::imgui
         tinyobjloader::tinyobjloader

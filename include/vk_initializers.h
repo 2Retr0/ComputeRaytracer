@@ -1,71 +1,74 @@
 ﻿#pragma once
 
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
+
 #include "vk_types.h"
 
 /** Abstractions over the initialization of Vulkan structures. */
 namespace vkinit {
-    VkCommandPoolCreateInfo command_pool_create_info(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags = 0);
+    vk::CommandPoolCreateInfo command_pool_create_info(uint32_t queueFamilyIndex, vk::CommandPoolCreateFlags flags = {});
 
-    VkCommandBufferAllocateInfo command_buffer_allocate_info(VkCommandPool pool, uint32_t count = 1, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+    vk::CommandBufferAllocateInfo command_buffer_allocate_info(vk::CommandPool pool, uint32_t count = 1, vk::CommandBufferLevel level = vk::CommandBufferLevel::ePrimary);
 
-    VkCommandBufferBeginInfo command_buffer_begin_info(VkCommandBufferUsageFlags flags = 0);
+    vk::CommandBufferBeginInfo command_buffer_begin_info(vk::CommandBufferUsageFlags flags = {});
 
-    VkFramebufferCreateInfo framebuffer_create_info(VkRenderPass renderpass, VkExtent2D extent);
+    vk::FramebufferCreateInfo framebuffer_create_info(vk::RenderPass renderpass, vk::Extent2D extent);
 
-    VkSubmitInfo submit_info(VkCommandBuffer* commandBuffer);
+    vk::SubmitInfo submit_info(const vk::CommandBuffer *commandBuffer);
 
-    VkPresentInfoKHR present_info();
+    vk::PresentInfoKHR present_info();
 
-    VkRenderPassBeginInfo renderpass_begin_info(VkRenderPass renderpass, VkExtent2D windowExtent, VkFramebuffer framebuffer);
+    vk::RenderPassBeginInfo renderpass_begin_info(vk::RenderPass renderpass, vk::Extent2D windowExtent, vk::Framebuffer framebuffer);
 
     /** Configuration for a single shader stage for the pipeline--built from a shader stage and a shader module. */
-    VkPipelineShaderStageCreateInfo pipeline_shader_stage_create_info(VkShaderStageFlagBits stage, VkShaderModule shaderModule);
+    vk::PipelineShaderStageCreateInfo pipeline_shader_stage_create_info(vk::ShaderStageFlagBits stage, vk::ShaderModule shaderModule);
 
     /** Configuration for vertex buffers and vertex formats. This is equivalent to the VAO configuration on OpenGL. */
-    VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info();
+    vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info();
 
     /**
      * Configuration for what kind of topology will be drawn. This is where you set it to draw triangles, lines, points, or
      * others like triangle-list.
      */
-    VkPipelineInputAssemblyStateCreateInfo input_assembly_create_info(VkPrimitiveTopology topology);
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly_create_info(vk::PrimitiveTopology topology);
 
     /**
      * Configuration for the fixed-function rasterization. This is where we enable or disable backface culling, and set
      * line width or wireframe drawing.
      */
-    VkPipelineRasterizationStateCreateInfo rasterization_state_create_info(VkPolygonMode polygonMode);
+    vk::PipelineRasterizationStateCreateInfo rasterization_state_create_info(vk::PolygonMode polygonMode);
 
     /** Configuration for MSAA within the pipeline. */
-    VkPipelineMultisampleStateCreateInfo multisampling_state_create_info();
+    vk::PipelineMultisampleStateCreateInfo multisampling_state_create_info();
 
     /** Configuration for how the pipeline blends into a given attachment. */
-    VkPipelineColorBlendAttachmentState color_blend_attachment_state();
+    vk::PipelineColorBlendAttachmentState color_blend_attachment_state();
 
     /**
      * Configuration for information about shader inputs of a given pipeline. We would configure our push-constraints
      * and descriptor sets here.
      */
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info();
+    vk::PipelineLayoutCreateInfo pipeline_layout_create_info();
 
-    VkFenceCreateInfo fence_create_info(VkFenceCreateFlags flags = 0);
+    vk::FenceCreateInfo fence_create_info(vk::FenceCreateFlags flags = {});
 
-    VkSemaphoreCreateInfo semaphore_create_info(VkSemaphoreCreateFlags flags = 0);
+    vk::SemaphoreCreateInfo semaphore_create_info(vk::SemaphoreCreateFlags flags = {});
 
-    VkImageCreateInfo image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);
+    vk::ImageCreateInfo image_create_info(vk::Format format, vk::ImageUsageFlags usageFlags, vk::Extent3D extent);
 
-    VkImageViewCreateInfo imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
+    vk::ImageViewCreateInfo imageview_create_info(vk::Format format, vk::Image image, vk::ImageAspectFlags aspectFlags);
 
     /** Configuration for information about how to use depth-testing in a render pipeline. */
-    VkPipelineDepthStencilStateCreateInfo
-    depth_stencil_create_info(bool enableDepthTest, bool enableDepthWrite, VkCompareOp compareOperation);
+    vk::PipelineDepthStencilStateCreateInfo
+    depth_stencil_create_info(bool enableDepthTest, bool enableDepthWrite, vk::CompareOp compareOperation);
 
     /** Configuration for a descriptor itself. */
-    VkDescriptorSetLayoutBinding descriptor_set_layout_binding(VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding);
+    vk::DescriptorSetLayoutBinding descriptor_set_layout_binding(vk::DescriptorType type, vk::ShaderStageFlags stageFlags, uint32_t binding);
 
-    VkWriteDescriptorSet write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorBufferInfo* bufferInfo , uint32_t binding);
+    vk::WriteDescriptorSet write_descriptor_buffer(vk::DescriptorType type, vk::DescriptorSet dstSet, vk::DescriptorBufferInfo* bufferInfo , uint32_t binding);
 
-    VkSamplerCreateInfo sampler_create_info(VkFilter filters, VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+    vk::SamplerCreateInfo sampler_create_info(vk::Filter filters, vk::SamplerAddressMode samplerAddressMode = vk::SamplerAddressMode::eRepeat);
 
-    VkWriteDescriptorSet write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo* imageInfo, uint32_t binding);
+    vk::WriteDescriptorSet write_descriptor_image(vk::DescriptorType type, vk::DescriptorSet dstSet, vk::DescriptorImageInfo* imageInfo, uint32_t binding);
 } // namespace vkinit

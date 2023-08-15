@@ -1,9 +1,12 @@
 ﻿#pragma once
 
-#include "glm/glm.hpp"
-#include "glm/gtx/transform.hpp"
 #include "vk_mesh.h"
 #include "vk_types.h"
+
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtx/transform.hpp>
 
 #include <deque>
 #include <functional>
@@ -18,18 +21,18 @@ class PipelineBuilder {
 public:
     // This is a basic set of required Vulkan structs for pipeline creation, there are more, but for now these are the
     // ones we will need to fill for now.
-    std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    VkViewport viewport{};
-    VkRect2D scissor{};
-    VkPipelineRasterizationStateCreateInfo rasterizer{};
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    VkPipelineMultisampleStateCreateInfo multisampling{};
-    VkPipelineLayout pipelineLayout{};
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
+    vk::Viewport viewport;
+    vk::Rect2D scissor;
+    vk::PipelineRasterizationStateCreateInfo rasterizer;
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+    vk::PipelineMultisampleStateCreateInfo multisampling;
+    vk::PipelineLayout pipelineLayout;
+    vk::PipelineDepthStencilStateCreateInfo depthStencil;
 
-    VkPipeline build_pipeline(VkDevice device, VkRenderPass renderpass);
+    vk::raii::Pipeline build_pipeline(const vk::raii::Device &device, const vk::raii::RenderPass &renderpass);
 };
 
 
@@ -56,11 +59,11 @@ struct MeshPushConstants {
 
 
 struct Material {
-    VkDescriptorSet textureSet = {VK_NULL_HANDLE};
-    // Note: We store `VkPipeline` and layout by value, not pointer. They are 64-bit handles to internal driver
+    vk::raii::DescriptorSet textureSet = VK_NULL_HANDLE;
+    // Note: We store `vk::Pipeline` and layout by value, not pointer. They are 64-bit handles to internal driver
     //       structures anyway, so storing pointers to them isn't very useful.
-    VkPipeline pipeline;
-    VkPipelineLayout pipelineLayout;
+    vk::raii::Pipeline pipeline;
+    vk::raii::PipelineLayout pipelineLayout;
 };
 
 
@@ -98,34 +101,35 @@ struct GPUObjectData {
 /** Includes rendering-related structures to control object lifetimes easier (e.g., double buffering). */
 struct FrameData {
     // --- Structure Synchronization ---
-    VkSemaphore presentSemaphore, renderSemaphore;
-    VkFence renderFence;
+    vk::raii::Semaphore presentSemaphore = nullptr;
+    vk::raii::Semaphore renderSemaphore = nullptr;
+    vk::raii::Fence renderFence  = nullptr;
 
     // --- Commands ---
-    VkCommandPool commandPool;         // The command pool for our commands.
-    VkCommandBuffer mainCommandBuffer; // The buffer we will record into.
+    vk::raii::CommandPool commandPool = nullptr;         // The command pool for our commands.
+    vk::raii::CommandBuffer mainCommandBuffer = nullptr; // The buffer we will record into.
 
     // --- Descriptor Sets ---
 //    AllocatedBuffer cameraBuffer; // Buffer that holds a single `GPUCameraData` to use when rendering.
-//    VkDescriptorSet globalDescriptor;
+//    vk::DescriptorSet globalDescriptor;
 
     // --- Memory ---
     AllocatedBuffer objectBuffer;
-    VkDescriptorSet objectDescriptor;
+    vk::raii::DescriptorSet objectDescriptor = nullptr;
 };
 
 
 /** Abstraction for short-lived commands (e.g., copying meshes from a CPU -> GPU buffer). Stores upload-related structs. */
 struct UploadContext {
-    VkFence uploadFence;
-    VkCommandPool commandPool;
-    VkCommandBuffer commandBuffer;
+    vk::raii::Fence uploadFence = nullptr;
+    vk::raii::CommandPool commandPool = nullptr;
+    vk::raii::CommandBuffer commandBuffer = nullptr;
 };
 
 
 struct Texture {
     AllocatedImage image;
-    VkImageView imageView;
+    vk::raii::ImageView imageView;
 };
 
 
@@ -144,53 +148,54 @@ public:
     /** Run the main loop. */
     void run();
 
-    AllocatedBuffer create_buffer(size_t size, VkBufferUsageFlags flags, VmaMemoryUsage memoryUsage) const;
+    [[nodiscard]] AllocatedBuffer create_buffer(size_t size, vk::BufferUsageFlags flags, vma::MemoryUsage memoryUsage) const;
 
-    void immediate_submit(std::function<void(VkCommandBuffer commandBuffer)> &&function);
+    void immediate_submit(std::function<void(vk::CommandBuffer commandBuffer)> &&function) const;
 
 public:
     // --- Window ---
     bool isInitialized = false;
     int frameNumber = 0;
     int animationFrameNumber = 0;
-    VkExtent2D windowExtent = {1280, 800}; // The width and height of the window (px)
-    struct SDL_Window *window = nullptr;   // Forward-declaration for the window
+    vk::Extent2D windowExtent = {1280, 800}; // The width and height of the window (px)
+    struct SDL_Window *window;   // Forward-declaration for the window
     uint64_t ticksMs = 0;
 
     // --- Vulkan ---
-    VkInstance instance;                      // Vulkan library handle
-    VkDebugUtilsMessengerEXT debugMessenger;  // Vulkan debug output handle
-    VkPhysicalDevice chosenGPU;               // GPU chosen as the default device
-    VkDevice device;                          // Vulkan device for commands
-    VkSurfaceKHR surface;                     // Vulkan window surface
-    VkPhysicalDeviceProperties gpuProperties;
+    std::unique_ptr<vk::raii::Context> context;
+    std::unique_ptr<vk::raii::Instance> instance;                      // Vulkan library handle
+    std::unique_ptr<vk::raii::DebugUtilsMessengerEXT> debugMessenger;  // Vulkan debug output handle
+    std::unique_ptr<vk::raii::PhysicalDevice> chosenGPU;               // GPU chosen as the default device
+    std::unique_ptr<vk::raii::Device> device;                          // Vulkan device for commands
+    std::unique_ptr<vk::raii::SurfaceKHR> surface;                     // Vulkan window surface
+    vk::PhysicalDeviceProperties gpuProperties;
 
     // --- Swapchain ---
-    VkSwapchainKHR swapchain;
-    VkFormat swapchainImageFormat;                // Image format expected by the windowing system
+    std::unique_ptr<vk::raii::SwapchainKHR> swapchain;
+    vk::Format swapchainImageFormat;                // Image format expected by the windowing system
     std::vector<VkImage> swapchainImages;         // Array of images from the swapchain
-    std::vector<VkImageView> swapchainImageViews; // Array of image-views from the swapchain
+    std::vector<vk::raii::ImageView> swapchainImageViews; // Array of image-views from the swapchain
 
     // --- Commands ---
-    VkQueue graphicsQueue;        // The queue we will submit to.
+    vk::Queue graphicsQueue;        // The queue we will submit to.
     uint32_t graphicsQueueFamily; // The family of said queue.
 
     // --- Renderpass ---
-    VkRenderPass renderpass;
-    std::vector<VkFramebuffer> framebuffers;
-    VkImageView depthImageView;
+    std::unique_ptr<vk::raii::RenderPass> renderpass;
+    std::vector<vk::raii::Framebuffer> framebuffers;
+    std::unique_ptr<vk::raii::ImageView> depthImageView;
     AllocatedImage depthImage;
-    VkFormat depthFormat; // The format for the depth image.
+    vk::Format depthFormat; // The format for the depth image.
 
     // --- Memory ---
     DeletionQueue mainDeletionQueue;
-    VmaAllocator allocator;
+    vma::UniqueAllocator allocator;
     UploadContext uploadContext;
 
     // --- Scene Management ---
     std::vector<RenderObject> renderables;
-    std::unordered_map<std::string, Material> materials;
-    std::unordered_map<std::string, Mesh> meshes;
+    std::unordered_map<std::string, std::unique_ptr<Material>> materials;
+    std::unordered_map<std::string, std::unique_ptr<Mesh>> meshes;
     GPUSceneData sceneParameters;
     AllocatedBuffer sceneParameterBuffer;
 
@@ -203,14 +208,16 @@ public:
     FrameData frames[FRAME_OVERLAP];
 
     // --- Descriptor Sets ---
-    VkDescriptorSetLayout globalSetLayout;
-    VkDescriptorSetLayout objectSetLayout;
-    VkDescriptorPool descriptorPool;
-    VkDescriptorSet globalDescriptor;
+    std::unique_ptr<vk::raii::DescriptorSetLayout> globalSetLayout;
+    std::unique_ptr<vk::raii::DescriptorSetLayout> objectSetLayout;
+    std::unique_ptr<vk::raii::DescriptorPool> descriptorPool;
+    std::unique_ptr<vk::raii::DescriptorPool> imguiPool;
+    std::unique_ptr<vk::raii::DescriptorSet> globalDescriptor;
 
     // --- Textures ---
-    std::unordered_map<std::string, Texture> loadedTextures;
-    VkDescriptorSetLayout singleTextureSetLayout;
+    std::unordered_map<std::string, std::unique_ptr<Texture>> loadedTextures;
+    std::unique_ptr<vk::raii::DescriptorSetLayout> singleTextureSetLayout;
+    std::unique_ptr<vk::raii::Sampler> blockySampler;
 
 private:
     void init_vulkan();
@@ -235,7 +242,7 @@ private:
     void init_imgui();
 
     /** Loads a shader module from a spir-v file. Returns false if it errors. */
-    bool load_shader_module(const char *filePath, VkShaderModule *outShaderModule) const;
+    std::unique_ptr<vk::raii::ShaderModule> load_shader_module(const char *filePath) const;
 
     void load_images();
 
@@ -243,10 +250,10 @@ private:
 
     void upload_mesh(Mesh &mesh);
 
-    void draw_objects(VkCommandBuffer commandBuffer, RenderObject *first, uint32_t count);
+    void draw_objects(const vk::raii::CommandBuffer &commandBuffer, RenderObject *first, uint32_t count);
 
     /** Creates a material and adds it to a map. */
-    Material *create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string &name);
+    void create_material(vk::raii::Pipeline pipeline, vk::raii::PipelineLayout layout, const std::string &name);
 
     size_t pad_uniform_buffer_size(size_t originalSize) const;
 

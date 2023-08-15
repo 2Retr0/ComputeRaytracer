@@ -5,42 +5,15 @@
 
 VertexInputDescription Vertex::get_vertex_description() {
     VertexInputDescription description;
-
     // We will have just one vertex buffer binding, with a per-vertex rate
-    VkVertexInputBindingDescription mainBinding = {
-        .binding = 0,
-        .stride = sizeof(Vertex),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    };
+    auto mainBinding = vk::VertexInputBindingDescription(0, sizeof(Vertex), vk::VertexInputRate::eVertex);
     description.bindings.push_back(mainBinding);
 
-    VkVertexInputAttributeDescription positionAttribute = {
-        .location = 0, // Position will be stored at Location 0
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = offsetof(Vertex, position),
-    };
-
-    VkVertexInputAttributeDescription normalAttribute = {
-        .location = 1, // Normal will be stored at Location 1
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = offsetof(Vertex, normal),
-    };
-
-    VkVertexInputAttributeDescription colorAttribute = {
-        .location = 2, // Normal will be stored at Location 2
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = offsetof(Vertex, color),
-    };
-
-    VkVertexInputAttributeDescription uvAttribute = {
-        .location = 3, // UV will be stored at Location 3
-        .binding = 0,
-        .format = VK_FORMAT_R32G32_SFLOAT,
-        .offset = offsetof(Vertex, uv),
-    };
+    // Position at location 0, normal at location 1, color at location 2, and UV at location 3
+    auto positionAttribute = vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
+    auto normalAttribute = vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal));
+    auto colorAttribute = vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color));
+    auto uvAttribute = vk::VertexInputAttributeDescription(3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv));
 
     description.attributes.push_back(positionAttribute);
     description.attributes.push_back(normalAttribute);
@@ -71,7 +44,7 @@ bool Mesh::load_from_obj(const char *path, const char *baseDirectory /*= nullptr
     } else if (!error.empty()) {
         // If we have any error, print it to the console, and break the mesh loading. This happens if the file can't be
         // found or is malformed.
-        std::cerr << error << std::endl;
+        std::cerr << "ERROR: " << error << std::endl;
         return false;
     }
 

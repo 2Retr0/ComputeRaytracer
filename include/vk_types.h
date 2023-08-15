@@ -1,16 +1,16 @@
 ﻿#pragma once
 
-#include "vk_mem_alloc.h"
-
-#include <vulkan/vulkan.h>
+#include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
+#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 
 struct AllocatedBuffer {
-    VkBuffer buffer; // Handle to a GPU-side Vulkan buffer
-    VmaAllocation allocation;
+    vk::Buffer buffer; // Handle to a GPU-side Vulkan buffer
+    vma::Allocation allocation;
 };
 
 
 struct AllocatedImage {
-    VkImage image;
-    VmaAllocation allocation;
+    vk::Image image;
+    vma::Allocation allocation;
 };
