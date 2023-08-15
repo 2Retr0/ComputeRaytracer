@@ -59,11 +59,11 @@ struct MeshPushConstants {
 
 
 struct Material {
-    vk::raii::DescriptorSet textureSet = VK_NULL_HANDLE;
+    vk::raii::DescriptorSet textureSet = nullptr;
     // Note: We store `vk::Pipeline` and layout by value, not pointer. They are 64-bit handles to internal driver
     //       structures anyway, so storing pointers to them isn't very useful.
-    vk::raii::Pipeline pipeline;
-    vk::raii::PipelineLayout pipelineLayout;
+    vk::raii::Pipeline pipeline = nullptr;
+    vk::raii::PipelineLayout pipelineLayout = nullptr;
 };
 
 
@@ -129,7 +129,7 @@ struct UploadContext {
 
 struct Texture {
     AllocatedImage image;
-    vk::raii::ImageView imageView;
+    vk::raii::ImageView imageView = nullptr;
 };
 
 
@@ -158,32 +158,32 @@ public:
     int frameNumber = 0;
     int animationFrameNumber = 0;
     vk::Extent2D windowExtent = {1280, 800}; // The width and height of the window (px)
-    struct SDL_Window *window;   // Forward-declaration for the window
+    struct SDL_Window *window;               // Forward-declaration for the window
     uint64_t ticksMs = 0;
 
     // --- Vulkan ---
-    std::unique_ptr<vk::raii::Context> context;
-    std::unique_ptr<vk::raii::Instance> instance;                      // Vulkan library handle
-    std::unique_ptr<vk::raii::DebugUtilsMessengerEXT> debugMessenger;  // Vulkan debug output handle
-    std::unique_ptr<vk::raii::PhysicalDevice> chosenGPU;               // GPU chosen as the default device
-    std::unique_ptr<vk::raii::Device> device;                          // Vulkan device for commands
-    std::unique_ptr<vk::raii::SurfaceKHR> surface;                     // Vulkan window surface
+    vk::raii::Context context;
+    vk::raii::Instance instance = nullptr;                      // Vulkan library handle
+    vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;  // Vulkan debug output handle
+    vk::raii::PhysicalDevice chosenGPU = nullptr;               // GPU chosen as the default device
+    vk::raii::Device device = nullptr;                          // Vulkan device for commands
+    vk::raii::SurfaceKHR surface = nullptr;                     // Vulkan window surface
     vk::PhysicalDeviceProperties gpuProperties;
 
     // --- Swapchain ---
-    std::unique_ptr<vk::raii::SwapchainKHR> swapchain;
-    vk::Format swapchainImageFormat;                // Image format expected by the windowing system
-    std::vector<VkImage> swapchainImages;         // Array of images from the swapchain
+    vk::raii::SwapchainKHR swapchain = nullptr;
+    vk::Format swapchainImageFormat;                      // Image format expected by the windowing system
+    std::vector<VkImage> swapchainImages;                 // Array of images from the swapchain
     std::vector<vk::raii::ImageView> swapchainImageViews; // Array of image-views from the swapchain
 
     // --- Commands ---
-    vk::Queue graphicsQueue;        // The queue we will submit to.
+    vk::Queue graphicsQueue;      // The queue we will submit to.
     uint32_t graphicsQueueFamily; // The family of said queue.
 
     // --- Renderpass ---
-    std::unique_ptr<vk::raii::RenderPass> renderpass;
+    vk::raii::RenderPass renderpass = nullptr;
     std::vector<vk::raii::Framebuffer> framebuffers;
-    std::unique_ptr<vk::raii::ImageView> depthImageView;
+    vk::raii::ImageView depthImageView = nullptr;
     AllocatedImage depthImage;
     vk::Format depthFormat; // The format for the depth image.
 
@@ -194,8 +194,8 @@ public:
 
     // --- Scene Management ---
     std::vector<RenderObject> renderables;
-    std::unordered_map<std::string, std::unique_ptr<Material>> materials;
-    std::unordered_map<std::string, std::unique_ptr<Mesh>> meshes;
+    std::unordered_map<std::string, Material> materials;
+    std::unordered_map<std::string, Mesh> meshes;
     GPUSceneData sceneParameters;
     AllocatedBuffer sceneParameterBuffer;
 
@@ -208,16 +208,16 @@ public:
     FrameData frames[FRAME_OVERLAP];
 
     // --- Descriptor Sets ---
-    std::unique_ptr<vk::raii::DescriptorSetLayout> globalSetLayout;
-    std::unique_ptr<vk::raii::DescriptorSetLayout> objectSetLayout;
-    std::unique_ptr<vk::raii::DescriptorPool> descriptorPool;
-    std::unique_ptr<vk::raii::DescriptorPool> imguiPool;
-    std::unique_ptr<vk::raii::DescriptorSet> globalDescriptor;
+    vk::raii::DescriptorSetLayout globalSetLayout = nullptr;
+    vk::raii::DescriptorSetLayout objectSetLayout = nullptr;
+    vk::raii::DescriptorPool descriptorPool = nullptr;
+    vk::raii::DescriptorPool imguiPool = nullptr;
+    vk::raii::DescriptorSet globalDescriptor = nullptr;
 
     // --- Textures ---
-    std::unordered_map<std::string, std::unique_ptr<Texture>> loadedTextures;
-    std::unique_ptr<vk::raii::DescriptorSetLayout> singleTextureSetLayout;
-    std::unique_ptr<vk::raii::Sampler> blockySampler;
+    std::unordered_map<std::string, Texture> loadedTextures;
+    vk::raii::DescriptorSetLayout singleTextureSetLayout = nullptr;
+    vk::raii::Sampler blockySampler = nullptr;
 
 private:
     void init_vulkan();
@@ -242,7 +242,7 @@ private:
     void init_imgui();
 
     /** Loads a shader module from a spir-v file. Returns false if it errors. */
-    std::unique_ptr<vk::raii::ShaderModule> load_shader_module(const char *filePath) const;
+    vk::raii::ShaderModule load_shader_module(const char *filePath) const;
 
     void load_images();
 

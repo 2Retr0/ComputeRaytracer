@@ -137,21 +137,21 @@ void VulkanEngine::init_vulkan() {
        .build()
        .value();
 
-    context = std::make_unique<vk::raii::Context>();
-    instance = std::make_unique<vk::raii::Instance>(*context, vkbInstance.instance);
-    debugMessenger = std::make_unique<vk::raii::DebugUtilsMessengerEXT>(*instance, vkbInstance.debug_messenger);
+    context = vk::raii::Context();
+    instance = vk::raii::Instance(context, vkbInstance.instance);
+    debugMessenger = vk::raii::DebugUtilsMessengerEXT(instance, vkbInstance.debug_messenger);
 
     // --- Initialize Vulkan Device ---
     // Get the surface of the window we opened with SDL
     VkSurfaceKHR tempSurface;
-    SDL_Vulkan_CreateSurface(window, **instance, &tempSurface);
-    surface = std::make_unique<vk::raii::SurfaceKHR>(*instance, tempSurface);
+    SDL_Vulkan_CreateSurface(window, *instance, &tempSurface);
+    surface = vk::raii::SurfaceKHR(instance, tempSurface);
 
     // Use `vkBootstrap` to select a GPU. We want a GPU that can write to the SDL surface and supports Vulkan 1.1.
     auto selector = vkb::PhysicalDeviceSelector(vkbInstance);
     auto vkbPhysicalDevice = selector
         .set_minimum_version(1, 1)
-        .set_surface(**surface)
+        .set_surface(*surface)
         .select()
         .value();
 
@@ -162,8 +162,8 @@ void VulkanEngine::init_vulkan() {
     auto vkbDevice = deviceBuilder.add_pNext(&shaderDrawParametersFeatures).build().value();
 
     // Get the `vk::Device` handle used in the rest of the Vulkan application.
-    chosenGPU = std::make_unique<vk::raii::PhysicalDevice>(*instance, vkbPhysicalDevice.physical_device);
-    device = std::make_unique<vk::raii::Device>(*chosenGPU, vkbDevice.device);
+    chosenGPU = vk::raii::PhysicalDevice(instance, vkbPhysicalDevice.physical_device);
+    device = vk::raii::Device(chosenGPU, vkbDevice.device);
 
     // --- Grabbing Queues ---
     graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
@@ -171,9 +171,9 @@ void VulkanEngine::init_vulkan() {
 
     // --- Initialize Memory Allocator ---
     allocator = vma::createAllocatorUnique(vma::AllocatorCreateInfo()
-        .setPhysicalDevice(**chosenGPU)
-        .setDevice(**device)
-        .setInstance(**instance));
+        .setPhysicalDevice(*chosenGPU)
+        .setDevice(*device)
+        .setInstance(*instance));
     // clang-format on
 
     // Allocating multiple things into the same buffer with descriptors pointing to each part is generally a good idea
@@ -188,7 +188,7 @@ void VulkanEngine::init_vulkan() {
 
 
 void VulkanEngine::init_swapchain() {
-    auto swapchainBuilder = vkb::SwapchainBuilder(**chosenGPU, **device, **surface);
+    auto swapchainBuilder = vkb::SwapchainBuilder(*chosenGPU, *device, *surface);
 
     // --- Present Modes ---
     // VK_PRESENT_MODE_IMMEDIATE_KHR:    Immediate
@@ -206,12 +206,12 @@ void VulkanEngine::init_swapchain() {
         .value();
 
     // Store swapchain and its related images
-    swapchain = std::make_unique<vk::raii::SwapchainKHR>(*device, vkbSwapchain.swapchain);
+    swapchain = vk::raii::SwapchainKHR(device, vkbSwapchain.swapchain);
     swapchainImages = vkbSwapchain.get_images().value();
 
     auto imageViews = vkbSwapchain.get_image_views().value();
     for (const auto &imageView : imageViews)
-        swapchainImageViews.emplace_back(*device, imageView);
+        swapchainImageViews.emplace_back(device, imageView);
     swapchainImageFormat = vk::Format(vkbSwapchain.image_format);
 
     // --- Depth Image ---
@@ -232,7 +232,7 @@ void VulkanEngine::init_swapchain() {
 
     // Build an image-view for the depth image to use for rendering
     auto depthViewInfo = vkinit::imageview_create_info(depthFormat, depthImage.image, vk::ImageAspectFlagBits::eDepth);
-    depthImageView = std::make_unique<vk::raii::ImageView>(*device, depthViewInfo);
+    depthImageView = vk::raii::ImageView(device, depthViewInfo);
 
     // --- Cleanup ---
     mainDeletionQueue.push([this]() {
@@ -248,20 +248,20 @@ void VulkanEngine::init_commands() {
     auto uploadCommandPoolInfo = vkinit::command_pool_create_info(graphicsQueueFamily);
 
     for (auto &frame : frames) {
-        frame.commandPool = vk::raii::CommandPool(*device, commandPoolInfo);
+        frame.commandPool = vk::raii::CommandPool(device, commandPoolInfo);
 
         // Allocate the other default command buffer that we will use for rendering.
         auto commandAllocateInfo = vkinit::command_buffer_allocate_info(*frame.commandPool, 1);
-        auto commandBuffers = vk::raii::CommandBuffers(*device, commandAllocateInfo);
+        auto commandBuffers = vk::raii::CommandBuffers(device, commandAllocateInfo);
         frame.mainCommandBuffer = vk::raii::CommandBuffer(std::move(commandBuffers[0]));
     }
 
     // Create pool for upload context
-    uploadContext.commandPool = vk::raii::CommandPool(*device, uploadCommandPoolInfo);
+    uploadContext.commandPool = vk::raii::CommandPool(device, uploadCommandPoolInfo);
 
     // Allocate the default command buffer that we will use for the instant commands
     auto instantCommandAllocateInfo = vkinit::command_buffer_allocate_info(*uploadContext.commandPool, 1);
-    auto instantCommandBuffers = vk::raii::CommandBuffers(*device, instantCommandAllocateInfo);
+    auto instantCommandBuffers = vk::raii::CommandBuffers(device, instantCommandAllocateInfo);
     uploadContext.commandBuffer = vk::raii::CommandBuffer(std::move(instantCommandBuffers.front()));
 }
 
@@ -341,7 +341,7 @@ void VulkanEngine::init_default_renderpass() {
         .setDependencyCount(2)
         .setPDependencies(&dependencies[0]);
     // clang-format on
-    renderpass = std::make_unique<vk::raii::RenderPass>(*device, renderpassInfo);
+    renderpass = vk::raii::RenderPass(device, renderpassInfo);
 }
 
 
@@ -353,13 +353,13 @@ void VulkanEngine::init_framebuffers() {
     // Create framebuffers for each of the swapchain image views. We connect the depth image view when creating each of
     // the framebuffers. We do not need to change the depth image between frames and can just clear and reuse the same
     // depth image for every.
-    auto framebufferInfo = vkinit::framebuffer_create_info(**renderpass, windowExtent);
+    auto framebufferInfo = vkinit::framebuffer_create_info(*renderpass, windowExtent);
     for (int i = 0; i < swapchainImageCount; i++) {
-        vk::ImageView attachments[2] = {*swapchainImageViews[i], **depthImageView};
+        vk::ImageView attachments[2] = {*swapchainImageViews[i], *depthImageView};
         framebufferInfo.setAttachmentCount(2);
         framebufferInfo.setPAttachments(attachments);
 
-        framebuffers.emplace_back(*device, framebufferInfo);
+        framebuffers.emplace_back(device, framebufferInfo);
     }
 }
 
@@ -371,20 +371,20 @@ void VulkanEngine::init_sync_structures() {
     auto semaphoreCreateInfo = vkinit::semaphore_create_info();
     auto uploadFenceCreateInfo = vkinit::fence_create_info();
 
-    uploadContext.uploadFence = vk::raii::Fence(*device, uploadFenceCreateInfo);
+    uploadContext.uploadFence = vk::raii::Fence(device, uploadFenceCreateInfo);
 
     for (auto &frame : frames) {
         // --- Create Fence ---
-        frame.renderFence = vk::raii::Fence(*device, fenceCreateInfo);
+        frame.renderFence = vk::raii::Fence(device, fenceCreateInfo);
 
         // --- Create Semaphores ---
-        frame.presentSemaphore = vk::raii::Semaphore(*device, semaphoreCreateInfo);
-        frame.renderSemaphore = vk::raii::Semaphore(*device, semaphoreCreateInfo);
+        frame.presentSemaphore = vk::raii::Semaphore(device, semaphoreCreateInfo);
+        frame.renderSemaphore = vk::raii::Semaphore(device, semaphoreCreateInfo);
     }
 }
 
 
-std::unique_ptr<vk::raii::ShaderModule> VulkanEngine::load_shader_module(const char *filePath) const {
+vk::raii::ShaderModule VulkanEngine::load_shader_module(const char *filePath) const {
     // Open the file with cursor at the end. We use `std::ios::binary` to open the stream in binary and `std::ios::ate`
     // to open the stream at the end of the file.
     std::ifstream file(filePath, std::ios::ate | std::ios::binary);
@@ -408,7 +408,7 @@ std::unique_ptr<vk::raii::ShaderModule> VulkanEngine::load_shader_module(const c
 
     // Check if the shader module creation goes well. It's very common to have errors that will fail creation, so we
     // will not use `VK_CHECK` here.
-    return std::make_unique<vk::raii::ShaderModule>(*device, createInfo);
+    return vk::raii::ShaderModule(device, createInfo);
 }
 
 
@@ -425,7 +425,7 @@ void VulkanEngine::init_pipelines() {
     for (const auto &shaderName : shaderNames) {
         auto filepath = shaderBaseDirectory + shaderName + ".spv";
         try {
-            shaderModules[shaderName] = load_shader_module(filepath.c_str());
+            shaderModules[shaderName] = std::make_unique<vk::raii::ShaderModule>(load_shader_module(filepath.c_str()));
         } catch (...) {
             std::cout << "ERROR: Could not load shader module " << shaderName << std::endl;
             continue;
@@ -487,11 +487,11 @@ void VulkanEngine::init_pipelines() {
     meshPipelineLayoutInfo.pushConstantRangeCount = 1;
 
     // Hook the global set layout--we need to let the pipeline know what descriptors will be bound to it.
-    vk::DescriptorSetLayout coloredSetLayouts[] = { **globalSetLayout, **objectSetLayout };
+    vk::DescriptorSetLayout coloredSetLayouts[] = { *globalSetLayout, *objectSetLayout };
     meshPipelineLayoutInfo.setLayoutCount = 2;
     meshPipelineLayoutInfo.pSetLayouts = coloredSetLayouts;
 
-    auto meshPipelineLayout = vk::raii::PipelineLayout(*device, meshPipelineLayoutInfo);
+    auto meshPipelineLayout = vk::raii::PipelineLayout(device, meshPipelineLayoutInfo);
 
     // --- Colored Mesh Pipeline ---
     pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
@@ -500,20 +500,20 @@ void VulkanEngine::init_pipelines() {
 
     pipelineBuilder.pipelineLayout = *meshPipelineLayout; // Use the mesh pipeline layout w/ push constants we created.
 
-    auto coloredMeshPipeline = pipelineBuilder.build_pipeline(*device, *renderpass);
+    auto coloredMeshPipeline = pipelineBuilder.build_pipeline(device, renderpass);
     // Now our mesh pipeline has the space for the push constants, so we can now execute the command to use them.
     create_material(std::move(coloredMeshPipeline), std::move(meshPipelineLayout), "defaultmesh");
 
 
     // --- Textured Mesh Pipeline Layout ---
     auto texturedPipelineLayoutInfo = meshPipelineLayoutInfo;
-    vk::DescriptorSetLayout texturedSetLayouts[] = {**globalSetLayout, **objectSetLayout, **singleTextureSetLayout};
+    vk::DescriptorSetLayout texturedSetLayouts[] = {*globalSetLayout, *objectSetLayout, *singleTextureSetLayout};
 
     texturedPipelineLayoutInfo.setLayoutCount = 3;
     texturedPipelineLayoutInfo.pSetLayouts = texturedSetLayouts;
 
-    auto texturedPipelineLayout = vk::raii::PipelineLayout(*device, texturedPipelineLayoutInfo);
-    auto texturedPipelineLayout2 = vk::raii::PipelineLayout(*device, texturedPipelineLayoutInfo);
+    auto texturedPipelineLayout = vk::raii::PipelineLayout(device, texturedPipelineLayoutInfo);
+    auto texturedPipelineLayout2 = vk::raii::PipelineLayout(device, texturedPipelineLayoutInfo);
 
     // --- Textured Mesh Pipeline ---
     pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
@@ -522,8 +522,8 @@ void VulkanEngine::init_pipelines() {
 
     pipelineBuilder.pipelineLayout = *texturedPipelineLayout; // Connect the new pipeline layout to the pipeline builder
 
-    auto texturedMeshPipeline = pipelineBuilder.build_pipeline(*device, *renderpass);
-    auto texturedMeshPipeline2 = pipelineBuilder.build_pipeline(*device, *renderpass);
+    auto texturedMeshPipeline = pipelineBuilder.build_pipeline(device, renderpass);
+    auto texturedMeshPipeline2 = pipelineBuilder.build_pipeline(device, renderpass);
     create_material(std::move(texturedMeshPipeline), std::move(texturedPipelineLayout), "texturedmesh");
     create_material(std::move(texturedMeshPipeline2), std::move(texturedPipelineLayout2), "texturedmesh2");
 }
@@ -532,13 +532,13 @@ void VulkanEngine::init_pipelines() {
 void VulkanEngine::load_images() {
     auto lostEmpireImage = vkutil::load_image_from_file(*this, "../assets/lost_empire-RGBA.png");
     auto imageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Srgb, lostEmpireImage.image, vk::ImageAspectFlagBits::eColor);
-    auto lostEmpire = Texture(lostEmpireImage, vk::raii::ImageView(*device, imageviewInfo));
-    loadedTextures["empire_diffuse"] = std::make_unique<Texture>(std::move(lostEmpire));
+    auto lostEmpire = Texture(lostEmpireImage, vk::raii::ImageView(device, imageviewInfo));
+    loadedTextures["empire_diffuse"] = Texture(std::move(lostEmpire));
 
     auto fumoImage = vkutil::load_image_from_file(*this, "../assets/cirno_low_u1_v1.png");
     auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Srgb, fumoImage.image, vk::ImageAspectFlagBits::eColor);
-    auto fumo = Texture(fumoImage, vk::raii::ImageView(*device, fumoImageviewInfo));
-    loadedTextures["fumo_diffuse"] = std::make_unique<Texture>(std::move(fumo));
+    auto fumo = Texture(fumoImage, vk::raii::ImageView(device, fumoImageviewInfo));
+    loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
 }
 
 
@@ -566,10 +566,10 @@ void VulkanEngine::load_meshes() {
 
     // Note: that we are copying them. Eventually we will delete the hardcoded `monkey` and `triangle` meshes, so it's
     //       no problem now.
-    meshes["triangle"] = std::make_unique<Mesh>(std::move(triangleMesh));
-    meshes["monkey"] = std::make_unique<Mesh>(std::move(monkeyMesh));
-    meshes["fumo"] = std::make_unique<Mesh>(std::move(fumoMesh));
-    meshes["empire"] = std::make_unique<Mesh>(std::move(lostEmpireMesh));
+    meshes["triangle"] = Mesh(std::move(triangleMesh));
+    meshes["monkey"] = Mesh(std::move(monkeyMesh));
+    meshes["fumo"] = Mesh(std::move(fumoMesh));
+    meshes["empire"] = Mesh(std::move(lostEmpireMesh));
 }
 
 
@@ -663,23 +663,23 @@ void VulkanEngine::init_scene() {
     auto *texturedMaterial = get_material("texturedmesh");
     auto *texturedMaterial2 = get_material("texturedmesh2");
     // Allocate the descriptor set for single-texture to use on the material.
-    auto textureDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(**descriptorPool, **singleTextureSetLayout);
-    texturedMaterial->textureSet = std::move(vk::raii::DescriptorSets(*device, textureDescriptorSetAllocInfo).front());
-    texturedMaterial2->textureSet = std::move(vk::raii::DescriptorSets(*device, textureDescriptorSetAllocInfo).front());
+    auto textureDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *singleTextureSetLayout);
+    texturedMaterial->textureSet = std::move(vk::raii::DescriptorSets(device, textureDescriptorSetAllocInfo).front());
+    texturedMaterial2->textureSet = std::move(vk::raii::DescriptorSets(device, textureDescriptorSetAllocInfo).front());
 
     // Create a sampler for the scene. We want it to be blocky, so we use `VK_FILTER_NEAREST`.
     auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eNearest);
-    blockySampler = std::make_unique<vk::raii::Sampler>(vk::raii::Sampler(*device, samplerInfo));
+    blockySampler = vk::raii::Sampler(vk::raii::Sampler(device, samplerInfo));
 
     // Write the descriptor set so that it points to our empire_diffuse texture
     auto imageBufferInfo = vk::DescriptorImageInfo(
-        **blockySampler, *loadedTextures["empire_diffuse"]->imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
+        *blockySampler, *loadedTextures["empire_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
     auto textureWrite = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial->textureSet, &imageBufferInfo, 0);
-    device->updateDescriptorSets({textureWrite}, nullptr);
+    device.updateDescriptorSets({textureWrite}, nullptr);
 
-    imageBufferInfo.imageView = *loadedTextures["fumo_diffuse"]->imageView;
+    imageBufferInfo.imageView = *loadedTextures["fumo_diffuse"].imageView;
     auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
-    device->updateDescriptorSets({textureWrite2}, nullptr);
+    device.updateDescriptorSets({textureWrite2}, nullptr);
 }
 
 
@@ -706,7 +706,7 @@ void VulkanEngine::init_imgui() {
         .setPoolSizeCount(std::size(poolSizes))
         .setPPoolSizes(poolSizes);
 
-    imguiPool = std::make_unique<vk::raii::DescriptorPool>(*device, poolInfo);
+    imguiPool = vk::raii::DescriptorPool(device, poolInfo);
 
 
     // --- Initialize ImGui Library ---
@@ -715,16 +715,16 @@ void VulkanEngine::init_imgui() {
 
     // Initialize ImGui for Vulkan
     ImGui_ImplVulkan_InitInfo initInfo = {
-        .Instance = **instance,
-        .PhysicalDevice = **chosenGPU,
-        .Device = **device,
+        .Instance = *instance,
+        .PhysicalDevice = *chosenGPU,
+        .Device = *device,
         .Queue = graphicsQueue,
-        .DescriptorPool = **imguiPool,
+        .DescriptorPool = *imguiPool,
         .MinImageCount = 3,
         .ImageCount = 3,
         .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
     };
-    ImGui_ImplVulkan_Init(&initInfo, **renderpass);
+    ImGui_ImplVulkan_Init(&initInfo, *renderpass);
 
     // Execute a GPU command to upload imgui font textures
     immediate_submit([&](vk::CommandBuffer commandBuffer) {
@@ -740,21 +740,21 @@ void VulkanEngine::init_imgui() {
 
 
 void VulkanEngine::create_material(vk::raii::Pipeline pipeline, vk::raii::PipelineLayout layout, const std::string &name) {
-    materials[name] = std::make_unique<Material>(nullptr, std::move(pipeline), std::move(layout));
+    materials[name] = Material(nullptr, std::move(pipeline), std::move(layout));
 }
 
 
 Material *VulkanEngine::get_material(const std::string &name) {
     // Search for the object; return `nullptr` if not found.
     auto it = materials.find(name);
-    return it == materials.end() ? nullptr : (&(*it).second)->get();
+    return it == materials.end() ? nullptr : &(*it).second;
 }
 
 
 Mesh *VulkanEngine::get_mesh(const std::string &name) {
     // Search for the object; return `nullptr` if not found.
     auto it = meshes.find(name);
-    return it == meshes.end() ? nullptr : (&(*it).second)->get();
+    return it == meshes.end() ? nullptr : &(*it).second;
 }
 
 
@@ -774,7 +774,7 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
     sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
 
     uint8_t *sceneData;
-    resultCheck(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData), "ERROR: Memory map failed!");
+    VK_CHECK(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData));
 
     // Write camera parameter data
     sceneData += FRAME_OFFSET * frameIndex;
@@ -813,7 +813,7 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
             // Bind the camera data descriptor set when changing pipelines.
             // Offset for our scene buffer--dynamic uniform buffers allow us to specify offset when binding.
             auto uniform_offset = FRAME_OFFSET * frameIndex;
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 0, {**globalDescriptor}, uniform_offset);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 0, {*globalDescriptor}, uniform_offset);
 
             // Bind the object data descriptor set
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 1, {*currentFrame.objectDescriptor}, nullptr);
@@ -876,7 +876,7 @@ void VulkanEngine::init_descriptors() {
     };
 
     auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, sizes.size(), sizes.data());
-    descriptorPool = std::make_unique<vk::raii::DescriptorPool>(*device, descriptorPoolInfo);
+    descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolInfo);
 
     // --- Descriptor Set Layouts ---
     // Global descriptor set
@@ -884,23 +884,23 @@ void VulkanEngine::init_descriptors() {
     auto sceneBinding = vkinit::descriptor_set_layout_binding(
         vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0);
     auto globalSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &sceneBinding);
-    globalSetLayout = std::make_unique<vk::raii::DescriptorSetLayout>(*device, globalSetInfo);
+    globalSetLayout = vk::raii::DescriptorSetLayout(device, globalSetInfo);
 
     // Object descriptor set
     auto objectBinding = vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex, 0);
     auto objectSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &objectBinding);
-    objectSetLayout = std::make_unique<vk::raii::DescriptorSetLayout>(*device, objectSetInfo);
+    objectSetLayout = vk::raii::DescriptorSetLayout(device, objectSetInfo);
 
     // Texture descriptor set which holds a single texture
     auto singleTextureBinding = vkinit::descriptor_set_layout_binding(
         vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 0);
     auto singleTextureSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &singleTextureBinding);
-    singleTextureSetLayout = std::make_unique<vk::raii::DescriptorSetLayout>(*device, singleTextureSetInfo);
+    singleTextureSetLayout = vk::raii::DescriptorSetLayout(device, singleTextureSetInfo);
 
 
     // --- Descriptor/Buffer Allocation ---
-    auto globalDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(**descriptorPool, **globalSetLayout);
-    globalDescriptor = std::make_unique<vk::raii::DescriptorSet>(std::move(device->allocateDescriptorSets(globalDescriptorSetAllocInfo).front()));
+    auto globalDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *globalSetLayout);
+    globalDescriptor = std::move(device.allocateDescriptorSets(globalDescriptorSetAllocInfo).front());
 
     // Uniform buffers are the best for this sort of small, read only shader data. They have a size limitation, but
     // they are very fast to access in the shaders.
@@ -914,21 +914,21 @@ void VulkanEngine::init_descriptors() {
         // for them is to store the data of all the objects in the scene.
         frame.objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
 
-        auto objectDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(**descriptorPool, **objectSetLayout);
-        frame.objectDescriptor = vk::raii::DescriptorSet(std::move(device->allocateDescriptorSets(objectDescriptorSetAllocInfo).front()));
+        auto objectDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *objectSetLayout);
+        frame.objectDescriptor = vk::raii::DescriptorSet(std::move(device.allocateDescriptorSets(objectDescriptorSetAllocInfo).front()));
 
         // We now have a descriptor stored in our frame struct. But this descriptor is not pointing to any buffer yet,
         // so we need to make it point into our buffers.
         auto sceneBufferInfo = vk::DescriptorBufferInfo(sceneParameterBuffer.buffer, 0, sizeof(GPUCameraData) + sizeof(GPUSceneData));
         auto objectBufferInfo = vk::DescriptorBufferInfo(frame.objectBuffer.buffer, 0, sizeof(GPUObjectData) * MAX_OBJECTS);
 
-        auto sceneWrite = vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, **globalDescriptor, &sceneBufferInfo, 0);
+        auto sceneWrite = vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *globalDescriptor, &sceneBufferInfo, 0);
         auto objectWrite = vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *frame.objectDescriptor, &objectBufferInfo, 0);
         std::array setWrites = {sceneWrite, objectWrite};
 
         // Note: We use one call to `vkUpdateDescriptorSets()` to update *two* different descriptor sets--this is
         //       completely valid to do!
-        device->updateDescriptorSets({sceneWrite, objectWrite}, nullptr);
+        device.updateDescriptorSets({sceneWrite, objectWrite}, nullptr);
     }
 
     // --- Cleanup ---
@@ -971,8 +971,8 @@ void VulkanEngine::immediate_submit(std::function<void(vk::CommandBuffer command
 
     // Submit command buffer to the queue and execute it. `uploadFence` will now block until the graphics commands finish.
     graphicsQueue.submit(submitInfo, *uploadContext.uploadFence);
-    VK_CHECK(device->waitForFences({*uploadContext.uploadFence}, true, 1E11));
-    device->resetFences({*uploadContext.uploadFence});
+    VK_CHECK(device.waitForFences({*uploadContext.uploadFence}, true, 1E11));
+    device.resetFences({*uploadContext.uploadFence});
     // Reset the command buffers within the command pool.
     uploadContext.commandPool.reset({});
 }
@@ -984,7 +984,7 @@ void VulkanEngine::cleanup() {
     if (isInitialized) {
         // It is imperative that objects are destroyed in the opposite order that they are created (unless we really
         // know what we are doing)!
-        device->waitIdle();
+        device.waitIdle();
 
         mainDeletionQueue.flush();
 
@@ -1001,13 +1001,13 @@ void VulkanEngine::draw() {
 
     // --- Setup ---
     // Wait until the GPU has finished rendering the last frame (timeout = 1s)
-    VK_CHECK(device->waitForFences({*currentFrame.renderFence}, true, 1E9));
-    device->resetFences({*currentFrame.renderFence});
+    VK_CHECK(device.waitForFences({*currentFrame.renderFence}, true, 1E9));
+    device.resetFences({*currentFrame.renderFence});
 
     // Request image from the swapchain (timeout = 1s). We use `presentSemaphore` to make sure that we can sync other
     // operations with the swapchain having an image ready to render.
     uint32_t swapchainImageIndex;
-    swapchainImageIndex = swapchain->acquireNextImage(1E9, *currentFrame.presentSemaphore, VK_NULL_HANDLE).second;
+    swapchainImageIndex = swapchain.acquireNextImage(1E9, *currentFrame.presentSemaphore, VK_NULL_HANDLE).second;
 
     // Commands have finished execution at this point; we can safely reset the command buffer to begin enqueuing again.
     currentFrame.mainCommandBuffer.reset({});
@@ -1030,7 +1030,7 @@ void VulkanEngine::draw() {
 
     // Start the main renderpass. We will use the clear color from above, and the framebuffer of the index the swapchain
     // gave us.
-    auto renderpassInfo = vkinit::renderpass_begin_info(**renderpass, windowExtent, *framebuffers[swapchainImageIndex]);
+    auto renderpassInfo = vkinit::renderpass_begin_info(*renderpass, windowExtent, *framebuffers[swapchainImageIndex]);
     renderpassInfo.clearValueCount = 2;
     renderpassInfo.pClearValues = &clearValues[0];
 
@@ -1062,7 +1062,7 @@ void VulkanEngine::draw() {
     // drawing commands have finished before the image is displayed to the user).
     auto presentInfo = vkinit::present_info()
         .setSwapchainCount(1)
-        .setPSwapchains(&(**swapchain))
+        .setPSwapchains(&(*swapchain))
         .setWaitSemaphoreCount(1)
         .setPWaitSemaphores(&(*currentFrame.renderSemaphore))
         .setPImageIndices(&swapchainImageIndex);
