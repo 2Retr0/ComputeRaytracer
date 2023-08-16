@@ -3,6 +3,8 @@
 /bin
 *.xml
 *.spv
+*.tx
+*.mesh
 
 # macOS
 *.DS_Store

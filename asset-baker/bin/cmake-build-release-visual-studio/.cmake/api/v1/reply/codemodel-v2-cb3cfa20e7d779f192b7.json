@@ -1,0 +1,56 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Release-d0094a50bb2071803777.json",
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "Release",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "Project",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "baker::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-baker-Release-727670c60d93dfc21722.json",
+					"name" : "baker",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Users/Retr0/Documents/1SHORTCUTS/PROJECTS/graphics/VulkanTest2/asset-baker/bin/cmake-build-release-visual-studio",
+		"source" : "C:/Users/Retr0/Documents/1SHORTCUTS/PROJECTS/graphics/VulkanTest2/asset-baker"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 5
+	}
+}

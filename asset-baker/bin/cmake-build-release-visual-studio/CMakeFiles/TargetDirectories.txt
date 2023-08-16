@@ -1,0 +1,3 @@
+C:/Users/Retr0/Documents/1SHORTCUTS/PROJECTS/graphics/VulkanTest2/asset-baker/bin/cmake-build-release-visual-studio/CMakeFiles/baker.dir
+C:/Users/Retr0/Documents/1SHORTCUTS/PROJECTS/graphics/VulkanTest2/asset-baker/bin/cmake-build-release-visual-studio/CMakeFiles/edit_cache.dir
+C:/Users/Retr0/Documents/1SHORTCUTS/PROJECTS/graphics/VulkanTest2/asset-baker/bin/cmake-build-release-visual-studio/CMakeFiles/rebuild_cache.dir

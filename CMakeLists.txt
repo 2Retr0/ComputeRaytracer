@@ -12,12 +12,14 @@ find_package(Vulkan REQUIRED)
 find_package(Stb REQUIRED)
 find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{VULKAN_SDK}/Bin/ $ENV{VULKAN_SDK}/Bin32/)
 
-set(PACKAGES sdl2 vk-bootstrap tinyobjloader imgui VulkanMemoryAllocator unofficial-vulkan-memory-allocator-hpp glm)
+set(PACKAGES sdl2 vk-bootstrap tinyobjloader imgui VulkanMemoryAllocator unofficial-vulkan-memory-allocator-hpp glm nlohmann_json lz4)
 foreach (package IN LISTS PACKAGES)
     find_package(${package} CONFIG REQUIRED)
 endforeach ()
 
-add_subdirectory(src)
+add_subdirectory(asset-baker)
+add_subdirectory(asset-lib)
+add_subdirectory(engine)
 
 # Find all the shader files under the shaders folder
 file(GLOB_RECURSE GLSL_SOURCE_FILES
