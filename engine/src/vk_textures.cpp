@@ -78,7 +78,7 @@ AllocatedImage vkutil::load_image_from_asset(VulkanEngine &engine, const std::st
 }
 
 
-AllocatedImage vkutil::upload_image(int width, int height, vk::Format imageFormat, VulkanEngine &engine, AllocatedBufferUntyped &stagingBuffer) {
+AllocatedImage vkutil::upload_image(int width, int height, vk::Format imageFormat, VulkanEngine &engine, AllocatedBuffer &stagingBuffer) {
     // --- Image Creation ---
     // Similar format to creating depth images, except we use the sampled and transfer destination usage flags since
     // the image will be used as a texture in shaders.
@@ -87,8 +87,7 @@ AllocatedImage vkutil::upload_image(int width, int height, vk::Format imageForma
 
     auto imageAllocInfo = vma::AllocationCreateInfo().setUsage(vma::MemoryUsage::eGpuOnly);
     // Allocate and create the image
-    auto [image, allocation] = engine.allocator->createImage(imageInfo, imageAllocInfo);
-    auto newImage = AllocatedImage(image, allocation);
+    auto newImage = static_cast<AllocatedImage>(engine.allocator->createImage(imageInfo, imageAllocInfo));
 
     engine.immediate_submit([&](vk::CommandBuffer commandBuffer) {
         // clang-format off

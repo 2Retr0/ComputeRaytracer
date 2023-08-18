@@ -112,7 +112,7 @@ assets::AssetFile assets::pack_mesh(MeshInfo *info, char *vertexData, char *inde
 }
 
 assets::MeshBounds assets::calculate_bounds(Vertex_f32_PNCV *vertices, size_t count) {
-    MeshBounds bounds;
+    MeshBounds bounds{};
 
     float min[3] = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max()};
     float max[3] = {std::numeric_limits<float>::min(), std::numeric_limits<float>::min(), std::numeric_limits<float>::min()};

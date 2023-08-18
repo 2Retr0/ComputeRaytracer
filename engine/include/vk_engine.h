@@ -114,7 +114,7 @@ struct FrameData {
 //    vk::DescriptorSet globalDescriptor;
 
     // --- Memory ---
-    AllocatedBufferUntyped objectBuffer;
+    AllocatedBuffer objectBuffer;
     vk::raii::DescriptorSet objectDescriptor = nullptr;
 };
 
@@ -148,7 +148,7 @@ public:
     /** Run the main loop. */
     void run();
 
-    [[nodiscard]] AllocatedBufferUntyped create_buffer(size_t size, vk::BufferUsageFlags flags, vma::MemoryUsage memoryUsage) const;
+    [[nodiscard]] AllocatedBuffer create_buffer(size_t size, vk::BufferUsageFlags flags, vma::MemoryUsage memoryUsage);
 
     void immediate_submit(std::function<void(vk::CommandBuffer commandBuffer)> &&function) const;
 
@@ -198,7 +198,7 @@ public:
     std::unordered_map<std::string, Material> materials;
     std::unordered_map<std::string, Mesh> meshes;
     GPUSceneData sceneParameters;
-    AllocatedBufferUntyped sceneParameterBuffer;
+    AllocatedBuffer sceneParameterBuffer;
 
     // --- Camera ---
     glm::vec3 camera = glm::vec3(0.f, 6.f, 10.f);

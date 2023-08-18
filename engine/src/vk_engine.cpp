@@ -227,8 +227,7 @@ void VulkanEngine::init_swapchain() {
     // clang-format on
 
     // Allocate and create the image
-    auto image = allocator->createImage(depthImageInfo, depthImageAllocationInfo);
-    depthImage = AllocatedImage(image.first, image.second);
+    depthImage = static_cast<AllocatedImage>(allocator->createImage(depthImageInfo, depthImageAllocationInfo));
 
     // Build an image-view for the depth image to use for rendering
     auto depthViewInfo = vkinit::imageview_create_info(depthFormat, depthImage.image, vk::ImageAspectFlagBits::eDepth);
@@ -278,7 +277,6 @@ void VulkanEngine::init_default_renderpass() {
         .setStencilStoreOp(vk::AttachmentStoreOp::eDontCare) //           """
         .setInitialLayout(vk::ImageLayout::eUndefined)       // We don't know (or care) about the starting layout of the attachment
         .setFinalLayout(vk::ImageLayout::ePresentSrcKHR);    // After the renderpass ends, the image has to be on a layout ready for display
-
 
     auto colorAttachmentReference = vk::AttachmentReference()
         .setAttachment(0) // Attachment number will index into the `pAttachments` array in the parent renderpass
@@ -574,67 +572,48 @@ void VulkanEngine::load_meshes() {
 
 
 void VulkanEngine::upload_mesh(Mesh &mesh) {
-//    const auto bufferSize = mesh.vertices.size() * sizeof(Vertex);
+    const auto bufferSize = mesh.vertices.size() * sizeof(Vertex);
 
-    const auto vertexBufferSize = mesh.vertices.size() * sizeof(Vertex);
-    const auto indexBufferSize = mesh.indices.size() * sizeof(uint32_t);
+    // --- CPU-side Buffer Allocation ---
+    // Create staging buffer to hold the mesh data before uploading to GPU buffer. Buffer will only be used as the
+    // source for transfer commands (no rendering) via `VK_BUFFER_USAGE_TRANSFER_SRC_BIT`.
+    auto stagingBufferInfo = vk::BufferCreateInfo({}, bufferSize, vk::BufferUsageFlagBits::eTransferSrc);
+    // Let VMA know that this data should be on CPU RAM.
+    auto vmaAllocInfo = vma::AllocationCreateInfo().setUsage(vma::MemoryUsage::eCpuOnly);
 
-    mesh.vertexBuffer = create_buffer(vertexBufferSize, vk::BufferUsageFlagBits::eVertexBuffer, vma::MemoryUsage::eCpuOnly);
-    //copy vertex data
-    void *data;
-    data = allocator->mapMemory(mesh.vertexBuffer.allocation);
-    memcpy(data, mesh.vertices.data(), vertexBufferSize);
-    allocator->unmapMemory(mesh.vertexBuffer.allocation);
+    // Allocate the buffer.
+    auto stagingBuffer = static_cast<AllocatedBuffer>(allocator->createBuffer(stagingBufferInfo, vmaAllocInfo));
 
-    if (indexBufferSize != 0)
-    {
-        mesh.indexBuffer = create_buffer(indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vma::MemoryUsage::eCpuOnly);
-        //copy index data
-        data = allocator->mapMemory(mesh.indexBuffer.allocation);
-        memcpy(data, mesh.indices.data(), indexBufferSize);
-        allocator->unmapMemory(mesh.indexBuffer.allocation);
-    }
+    // To push data into a vk::Buffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
+    // done with writing the data, we can unmap. We copy the mesh vertex data into the buffer.
+    void *vertexData;
+    vertexData = allocator->mapMemory(stagingBuffer.allocation);
+    memcpy(vertexData, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+    allocator->unmapMemory(stagingBuffer.allocation);
 
-//    // --- CPU-side Buffer Allocation ---
-//    // Create staging buffer to hold the mesh data before uploading to GPU buffer. Buffer will only be used as the
-//    // source for transfer commands (no rendering) via `VK_BUFFER_USAGE_TRANSFER_SRC_BIT`.
-//    auto stagingBufferInfo = vk::BufferCreateInfo({}, bufferSize, vk::BufferUsageFlagBits::eTransferSrc);
-//    // Let VMA know that this data should be on CPU RAM.
-//    auto vmaAllocInfo = vma::AllocationCreateInfo().setUsage(vma::MemoryUsage::eCpuOnly);
-//
-//    // Allocate the buffer.
-//    auto stagingBuffer = allocator->createBuffer(stagingBufferInfo, vmaAllocInfo);
-//
-//    // To push data into a vk::Buffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
-//    // done with writing the data, we can unmap. We copy the mesh vertex data into the buffer.
-//    void *vertexData;
-//    vertexData = allocator->mapMemory(stagingBuffer.second);
-//    memcpy(vertexData, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
-//    allocator->unmapMemory(stagingBuffer.second);
-//
-//    // --- GPU-side Buffer Allocation ---
-//    // Allocate the vertex buffer--we signify that the buffer will be used as vertex buffer so that the driver knows
-//    // we will use it to render meshes and to copy data into.
-//    auto vertexBufferInfo = vk::BufferCreateInfo({}, bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst);
-//
-//    // Let the VMA library know that this data should be GPU native.
-//    vmaAllocInfo.usage = vma::MemoryUsage::eGpuOnly;
-//
-//    // Allocate the buffer.
-//    mesh.vertexBuffer = create_buffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-//
-//    // Execute the copy command, enqueuing a `vkCmdCopyBuffer()` command
-//    immediate_submit([=, &mesh](vk::CommandBuffer commandBuffer) {
-//        auto copy = vk::BufferCopy(0, 0, bufferSize);
-//        commandBuffer.copyBuffer(stagingBuffer.first, mesh.vertexBuffer.buffer, {copy});
-//    });
-//
-//    // --- Cleanup ---
-//    // Add the destruction of the triangle mesh buffer to the deletion queue
-//    mainDeletionQueue.push([=, this]() {
-//        allocator->destroyBuffer(mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
-//    });
-//    allocator->destroyBuffer(stagingBuffer.first, stagingBuffer.second); // Delete immediately.
+    // --- GPU-side Buffer Allocation ---
+    // Allocate the vertex buffer--we signify that the buffer will be used as vertex buffer so that the driver knows
+    // we will use it to render meshes and to copy data into.
+    auto vertexBufferInfo = vk::BufferCreateInfo({}, bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst);
+
+    // Let the VMA library know that this data should be GPU native.
+    vmaAllocInfo.usage = vma::MemoryUsage::eGpuOnly;
+
+    // Allocate the buffer.
+    mesh.vertexBuffer = create_buffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+
+    // Execute the copy command, enqueuing a `vkCmdCopyBuffer()` command
+    immediate_submit([=, &mesh](vk::CommandBuffer commandBuffer) {
+        auto copy = vk::BufferCopy(0, 0, bufferSize);
+        commandBuffer.copyBuffer(stagingBuffer.buffer, mesh.vertexBuffer.buffer, {copy});
+    });
+
+    // --- Cleanup ---
+    // Add the destruction of the triangle mesh buffer to the deletion queue
+    mainDeletionQueue.push([=, this]() {
+        allocator->destroyBuffer(mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
+    });
+    allocator->destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation); // Delete immediately.
 }
 
 
@@ -867,14 +846,13 @@ FrameData &VulkanEngine::get_current_frame() {
 }
 
 
-AllocatedBufferUntyped VulkanEngine::create_buffer(size_t size, vk::BufferUsageFlags bufferUsage, vma::MemoryUsage memoryUsage) const {
+AllocatedBuffer VulkanEngine::create_buffer(size_t size, vk::BufferUsageFlags bufferUsage, vma::MemoryUsage memoryUsage) {
     // --- Allocate Vertex Buffer ---
     auto bufferInfo = vk::BufferCreateInfo({}, size, bufferUsage);
     auto vmaAllocInfo = vma::AllocationCreateInfo({}, memoryUsage);
 
     // Allocate the buffer
-    auto buffer = allocator->createBuffer(bufferInfo, vmaAllocInfo);
-    return {buffer.first, buffer.second};
+    return static_cast<AllocatedBuffer>(allocator->createBuffer(bufferInfo, vmaAllocInfo));
 }
 
 

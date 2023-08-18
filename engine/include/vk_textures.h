@@ -6,5 +6,5 @@
 namespace vkutil {
     AllocatedImage load_image_from_file(VulkanEngine &engine, const std::string &path);
     AllocatedImage load_image_from_asset(VulkanEngine &engine, const std::string &path);
-    AllocatedImage upload_image(int width, int height, vk::Format imageFormat, VulkanEngine &engine, AllocatedBufferUntyped &stagingBuffer);
+    AllocatedImage upload_image(int width, int height, vk::Format imageFormat, VulkanEngine &engine, AllocatedBuffer &stagingBuffer);
 } // namespace vkutil
