@@ -17,6 +17,6 @@ struct AllocatedImage {
     vk::Image image;
     vma::Allocation allocation;
 
-    AllocatedBuffer() = default;
+    AllocatedImage() = default;
     explicit AllocatedImage(std::pair<vk::Image, vma::Allocation> image) : image(image.first), allocation(image.second) {}
 };
