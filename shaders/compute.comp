@@ -1,0 +1,9 @@
+#version 450
+
+layout (local_size_x = 10) in;
+
+layout(binding = 0, rgba8) uniform writeonly image2D outImage;
+
+void main() {
+    imageStore(outImage, ivec2(gl_GlobalInvocationID.xy), vec4(vec3(1.0), 0.0));
+}

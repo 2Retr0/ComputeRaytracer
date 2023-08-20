@@ -71,4 +71,8 @@ namespace vkinit {
     vk::SamplerCreateInfo sampler_create_info(vk::Filter filters, vk::SamplerAddressMode samplerAddressMode = vk::SamplerAddressMode::eRepeat);
 
     vk::WriteDescriptorSet write_descriptor_image(vk::DescriptorType type, vk::DescriptorSet dstSet, vk::DescriptorImageInfo* imageInfo, uint32_t binding);
+
+    vk::BufferMemoryBarrier buffer_memory_barrier(vk::Buffer buffer, uint32_t queue);
+
+    vk::ImageMemoryBarrier image_memory_barrier(vk::Image image, vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::ImageAspectFlags aspectMask);
 } // namespace vkinit

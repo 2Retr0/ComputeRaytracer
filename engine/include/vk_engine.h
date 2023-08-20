@@ -17,25 +17,6 @@
 // Number of frames to overlap when rendering
 constexpr unsigned int FRAME_OVERLAP = 2;
 
-class PipelineBuilder {
-public:
-    // This is a basic set of required Vulkan structs for pipeline creation, there are more, but for now these are the
-    // ones we will need to fill for now.
-    std::vector<vk::PipelineShaderStageCreateInfo> shaderStages;
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-    vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
-    vk::Viewport viewport;
-    vk::Rect2D scissor;
-    vk::PipelineRasterizationStateCreateInfo rasterizer;
-    vk::PipelineColorBlendAttachmentState colorBlendAttachment;
-    vk::PipelineMultisampleStateCreateInfo multisampling;
-    vk::PipelineLayout pipelineLayout;
-    vk::PipelineDepthStencilStateCreateInfo depthStencil;
-
-    vk::raii::Pipeline build_pipeline(const vk::raii::Device &device, const vk::raii::RenderPass &renderpass);
-};
-
-
 struct DeletionQueue {
     std::deque<std::function<void()>> deletors;
 
@@ -219,6 +200,13 @@ public:
     std::unordered_map<std::string, Texture> loadedTextures;
     vk::raii::DescriptorSetLayout singleTextureSetLayout = nullptr;
     vk::raii::Sampler blockySampler = nullptr;
+
+    // --- Compute ---
+    vk::raii::DescriptorSetLayout computeSetLayout = nullptr;
+    vk::raii::DescriptorSet computeDescriptor = nullptr;
+    vk::raii::DescriptorSetLayout graphicsSetLayout = nullptr;
+    vk::raii::DescriptorSet graphicsDescriptor = nullptr;
+    Texture computeTexture;
 
 private:
     void init_vulkan();

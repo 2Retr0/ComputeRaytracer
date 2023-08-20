@@ -1,5 +1,6 @@
 #include "vk_engine.h"
 #include "vk_initializers.h"
+#include "vk_pipeline.h"
 #include "vk_textures.h"
 
 #include <imgui.h>
@@ -36,40 +37,6 @@ constexpr bool useValidationLayers = false;
 #else
 constexpr bool useValidationLayers = true;
 #endif
-
-vk::raii::Pipeline PipelineBuilder::build_pipeline(const vk::raii::Device &device, const vk::raii::RenderPass &renderpass) {
-    // Let’s begin by connecting the viewport and scissor into `ViewportState`, and setting the
-    // `ColorBlenderStateCreateInfo`.
-    // Make viewport state from our stored viewport and scissor. At the moment, we won't support multiple viewports or
-    // scissors.
-    auto viewportState = vk::PipelineViewportStateCreateInfo({}, 1, &viewport, 1, &scissor);
-
-    // Setup dummy color blending. We aren't using transparent objects yet, so the blending is just set to "no blend",
-    // but we do write to the color attachment.
-    auto colorBlending = vk::PipelineColorBlendStateCreateInfo({}, false, vk::LogicOp::eCopy, 1, &colorBlendAttachment);
-
-    // Build the actual pipeline. We will use all the info structs we have been writing into this one for creation.
-    // clang-format off
-    auto pipelineInfo = vk::GraphicsPipelineCreateInfo()
-        .setStageCount(shaderStages.size())
-        .setPStages(shaderStages.data())
-        .setPVertexInputState(&vertexInputInfo)
-        .setPInputAssemblyState(&inputAssembly)
-        .setPViewportState(&viewportState)
-        .setPRasterizationState(&rasterizer)
-        .setPMultisampleState(&multisampling)
-        .setPDepthStencilState(&depthStencil)
-        .setPColorBlendState(&colorBlending)
-        .setLayout(pipelineLayout)
-        .setRenderPass(*renderpass)
-        .setSubpass(0)
-        .setBasePipelineHandle(nullptr);
-    // clang-format on
-
-    // It's easy to error when creating the graphics pipeline, so we handle it better than just using VK_CHECK.
-    return {device, nullptr, pipelineInfo};
-}
-
 
 void VulkanEngine::init() {
     try {
@@ -400,9 +367,11 @@ vk::raii::ShaderModule VulkanEngine::load_shader_module(const char *path) const 
     file.close();                                // Close file after loading
 
     // Create a new shader module using the loaded buffer.
+    // clang-format off
     auto createInfo = vk::ShaderModuleCreateInfo()
         .setCodeSize(buffer.size() * sizeof(uint32_t)) // `codeSize` has to be in bytes
         .setPCode(buffer.data());
+    // clang-format on
 
     // Check if the shader module creation goes well. It's very common to have errors that will fail creation, so we
     // will not use `VK_CHECK` here.
@@ -418,6 +387,9 @@ void VulkanEngine::init_pipelines() {
         "default_lit.frag",
         "textured_lit.frag",
         "tri_mesh.vert",
+        "compute.comp",
+        "compute.vert",
+        "compute.frag"
     };
 
     for (const auto &shaderName : shaderNames) {
@@ -476,16 +448,18 @@ void VulkanEngine::init_pipelines() {
     auto meshPipelineLayoutInfo = vkinit::pipeline_layout_create_info();
 
     // Setup push constants
+    // clang-format off
     auto pushConstant = vk::PushConstantRange()
         .setStageFlags(vk::ShaderStageFlagBits::eVertex) // Push constant range is accessible only in the vertex shader
         .setOffset(0)                                    // Push constant range starts at the beginning
         .setSize(sizeof(MeshPushConstants));             // Push constant range has size of `MeshPushConstants` struct
+    // clang-format on
 
     meshPipelineLayoutInfo.pPushConstantRanges = &pushConstant;
     meshPipelineLayoutInfo.pushConstantRangeCount = 1;
 
     // Hook the global set layout--we need to let the pipeline know what descriptors will be bound to it.
-    vk::DescriptorSetLayout coloredSetLayouts[] = { *globalSetLayout, *objectSetLayout };
+    vk::DescriptorSetLayout coloredSetLayouts[] = {*globalSetLayout, *objectSetLayout};
     meshPipelineLayoutInfo.setLayoutCount = 2;
     meshPipelineLayoutInfo.pSetLayouts = coloredSetLayouts;
 
@@ -498,7 +472,7 @@ void VulkanEngine::init_pipelines() {
 
     pipelineBuilder.pipelineLayout = *meshPipelineLayout; // Use the mesh pipeline layout w/ push constants we created.
 
-    auto coloredMeshPipeline = pipelineBuilder.build_pipeline(device, renderpass);
+    auto coloredMeshPipeline = pipelineBuilder.build_graphics_pipeline(device, renderpass);
     // Now our mesh pipeline has the space for the push constants, so we can now execute the command to use them.
     create_material(std::move(coloredMeshPipeline), std::move(meshPipelineLayout), "defaultmesh");
 
@@ -520,10 +494,48 @@ void VulkanEngine::init_pipelines() {
 
     pipelineBuilder.pipelineLayout = *texturedPipelineLayout; // Connect the new pipeline layout to the pipeline builder
 
-    auto texturedMeshPipeline = pipelineBuilder.build_pipeline(device, renderpass);
-    auto texturedMeshPipeline2 = pipelineBuilder.build_pipeline(device, renderpass);
+    auto texturedMeshPipeline = pipelineBuilder.build_graphics_pipeline(device, renderpass);
+    auto texturedMeshPipeline2 = pipelineBuilder.build_graphics_pipeline(device, renderpass);
     create_material(std::move(texturedMeshPipeline), std::move(texturedPipelineLayout), "texturedmesh");
     create_material(std::move(texturedMeshPipeline2), std::move(texturedPipelineLayout2), "texturedmesh2");
+
+
+    // --- Compute Pipeline Layout ---
+    auto computePipelineLayoutInfo = meshPipelineLayoutInfo;
+    vk::DescriptorSetLayout computeSetLayouts[] = {*computeSetLayout};
+
+    computePipelineLayoutInfo.setLayoutCount = 1;
+    computePipelineLayoutInfo.pSetLayouts = computeSetLayouts;
+
+    auto computePipelineLayout = vk::raii::PipelineLayout(device, computePipelineLayoutInfo);
+
+    // --- Compute Pipeline ---
+    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eCompute, **shaderModules["compute.comp"]));
+
+    pipelineBuilder.pipelineLayout = *computePipelineLayout;
+
+    auto computePipeline = pipelineBuilder.build_compute_pipeline(device);
+    create_material(std::move(computePipeline), std::move(computePipelineLayout), "compute");
+
+    // --- Graphics Pipeline Layout ---
+    auto graphicsPipelineLayoutInfo = meshPipelineLayoutInfo;
+    vk::DescriptorSetLayout graphicsSetLayouts[] = {*graphicsSetLayout};
+
+    graphicsPipelineLayoutInfo.setLayoutCount = 1;
+    graphicsPipelineLayoutInfo.pSetLayouts = graphicsSetLayouts;
+
+    auto graphicsPipelineLayout = vk::raii::PipelineLayout(device, graphicsPipelineLayoutInfo);
+
+    // --- Compute Pipeline ---
+    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["compute.frag"]));
+    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["compute.vert"]));
+
+    pipelineBuilder.pipelineLayout = *graphicsPipelineLayout;
+
+    auto graphicsPipeline = pipelineBuilder.build_graphics_pipeline(device, renderpass);
+    create_material(std::move(graphicsPipeline), std::move(graphicsPipelineLayout), "graphics");
 }
 
 
@@ -649,12 +661,12 @@ void VulkanEngine::init_scene() {
         }
     }
 
-//    RenderObject map = {
-//        .mesh = get_mesh("empire"),
-//        .material = get_material("texturedmesh"),
-//        .transformMatrix = glm::translate(glm::vec3 {5, -10, 0}),
-//    };
-//    renderables.push_back(map);
+    //    RenderObject map = {
+    //        .mesh = get_mesh("empire"),
+    //        .material = get_material("texturedmesh"),
+    //        .transformMatrix = glm::translate(glm::vec3 {5, -10, 0}),
+    //    };
+    //    renderables.push_back(map);
 
     // --- Textures ---
     auto *texturedMaterial = get_material("texturedmesh");
@@ -671,12 +683,12 @@ void VulkanEngine::init_scene() {
     // Write the descriptor set so that it points to our empire_diffuse texture
     auto imageBufferInfo = vk::DescriptorImageInfo(
         *blockySampler, *loadedTextures["empire_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-//    auto textureWrite = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial->textureSet, &imageBufferInfo, 0);
-//    device.updateDescriptorSets({textureWrite}, nullptr);
+    //    auto textureWrite = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial->textureSet, &imageBufferInfo, 0);
+    //    device.updateDescriptorSets({textureWrite}, {});
 
     imageBufferInfo.imageView = *loadedTextures["fumo_diffuse"].imageView;
     auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
-    device.updateDescriptorSets({textureWrite2}, nullptr);
+    device.updateDescriptorSets({textureWrite2}, {});
 }
 
 
@@ -694,14 +706,13 @@ void VulkanEngine::init_imgui() {
         {vk::DescriptorType::eStorageBuffer, 1000},
         {vk::DescriptorType::eUniformBufferDynamic, 1000},
         {vk::DescriptorType::eStorageBufferDynamic, 1000},
-        {vk::DescriptorType::eInputAttachment, 1000}
-    };
+        {vk::DescriptorType::eInputAttachment, 1000}};
 
     auto poolInfo = vk::DescriptorPoolCreateInfo()
-        .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-        .setMaxSets(1000)
-        .setPoolSizeCount(std::size(poolSizes))
-        .setPPoolSizes(poolSizes);
+                        .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
+                        .setMaxSets(1000)
+                        .setPoolSizeCount(std::size(poolSizes))
+                        .setPPoolSizes(poolSizes);
 
     imguiPool = vk::raii::DescriptorPool(device, poolInfo);
 
@@ -798,8 +809,8 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
     allocator->unmapMemory(currentFrame.objectBuffer.allocation);
 
     // --- Draw Setup ---
-    Mesh *lastMesh = nullptr;
-    Material *lastMaterial = nullptr;
+    Mesh *lastMesh = {};
+    Material *lastMaterial = {};
     for (uint32_t i = 0; i < count; i++) {
         auto &object = first[i];
 
@@ -814,11 +825,11 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 0, {*globalDescriptor}, uniform_offset);
 
             // Bind the object data descriptor set
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 1, {*currentFrame.objectDescriptor}, nullptr);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 1, {*currentFrame.objectDescriptor}, {});
 
             // Binding the texture descriptor set if the texture set handle isn't null.
             if (*object.material->textureSet) {
-                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 2, {*object.material->textureSet}, nullptr);
+                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 2, {*object.material->textureSet}, {});
             }
         }
 
@@ -870,6 +881,7 @@ void VulkanEngine::init_descriptors() {
         {vk::DescriptorType::eUniformBufferDynamic, 10},
         {vk::DescriptorType::eStorageBuffer, 10},
         {vk::DescriptorType::eCombinedImageSampler, 10}, // Add combined-image-sampler descriptor types to the pool
+        {vk::DescriptorType::eStorageImage, 10},
     };
 
     auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, sizes.size(), sizes.data());
@@ -894,6 +906,59 @@ void VulkanEngine::init_descriptors() {
     auto singleTextureSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &singleTextureBinding);
     singleTextureSetLayout = vk::raii::DescriptorSetLayout(device, singleTextureSetInfo);
 
+    {
+        // Compute descriptor set
+        // Compute shader
+        // clang-format on
+        auto computeImageInfo = vkinit::image_create_info(
+            vk::Format::eR8G8B8A8Unorm,
+            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+            vk::Extent3D(windowExtent.width, windowExtent.height, 1));
+        computeImageInfo.initialLayout = vk::ImageLayout::eUndefined;
+        auto computeImageAllocationInfo = vma::AllocationCreateInfo()
+                                              .setUsage(vma::MemoryUsage::eGpuOnly)
+                                              .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
+        // clang-format on
+        auto computeImage = static_cast<AllocatedImage>(allocator->createImage(computeImageInfo, computeImageAllocationInfo));
+        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, computeImage.image, vk::ImageAspectFlagBits::eColor);
+
+        computeTexture = Texture(computeImage, vk::raii::ImageView(device, computeViewInfo));
+
+
+        std::vector<vk::DescriptorSetLayoutBinding> computeBindings = {
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 0),
+        };
+        auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &computeBindings[0]);
+        computeSetLayout = vk::raii::DescriptorSetLayout(device, computeSetInfo);
+
+        auto computeSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *computeSetLayout);
+        computeDescriptor = std::move(device.allocateDescriptorSets(computeSetAllocInfo).front());
+
+        auto outBufferInfo = vk::DescriptorImageInfo(nullptr, *computeTexture.imageView, vk::ImageLayout::eGeneral);
+
+        std::vector<vk::WriteDescriptorSet> computeWrites = {
+            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &outBufferInfo, 0),
+        };
+
+        device.updateDescriptorSets(computeWrites, {});
+
+
+
+        std::vector<vk::DescriptorSetLayoutBinding> graphicsBindings = {
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 0),
+        };
+        auto graphicsSetInfo = vk::DescriptorSetLayoutCreateInfo({}, graphicsBindings.size(), graphicsBindings.data());
+        graphicsSetLayout = vk::raii::DescriptorSetLayout(device, graphicsSetInfo);
+
+        auto graphicsSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *graphicsSetLayout);
+        graphicsDescriptor = std::move(device.allocateDescriptorSets(computeSetAllocInfo).front());
+
+        std::vector<vk::WriteDescriptorSet> graphicsWrites = {
+            vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *graphicsDescriptor, &outBufferInfo, 0),
+        };
+
+        device.updateDescriptorSets(graphicsWrites, {});
+    }
 
     // --- Descriptor/Buffer Allocation ---
     auto globalDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *globalSetLayout);
@@ -924,7 +989,7 @@ void VulkanEngine::init_descriptors() {
 
         // Note: We use one call to `vkUpdateDescriptorSets()` to update *two* different descriptor sets--this is
         //       completely valid to do!
-        device.updateDescriptorSets({sceneWrite, objectWrite}, nullptr);
+        device.updateDescriptorSets({sceneWrite, objectWrite}, {});
     }
 
     // --- Cleanup ---
@@ -1024,20 +1089,40 @@ void VulkanEngine::draw() {
 
     vk::ClearValue clearValues[] = {clearValue, depthClear};
 
+    // --- Compute Memory Barrier ---
+    auto computeMaterial = get_material("compute");
+    auto imageMemoryBarrier = vkinit::image_memory_barrier(computeTexture.image.image, {}, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, vk::ImageAspectFlagBits::eColor);
+
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, {imageMemoryBarrier});
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computeMaterial->pipeline);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, {*computeDescriptor}, {});
+    commandBuffer.dispatch(windowExtent.width / 16, windowExtent.height / 16, 1);
+
+    imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+    imageMemoryBarrier.dstAccessMask = {};
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, {imageMemoryBarrier});
+
+
+
     // Start the main renderpass. We will use the clear color from above, and the framebuffer of the index the swapchain
     // gave us.
+    auto graphicsMaterial = get_material("graphics");
     auto renderpassInfo = vkinit::renderpass_begin_info(*renderpass, windowExtent, *framebuffers[swapchainImageIndex]);
     renderpassInfo.clearValueCount = 2;
     renderpassInfo.pClearValues = &clearValues[0];
 
+    imageMemoryBarrier.srcAccessMask = {};
+    imageMemoryBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, {imageMemoryBarrier});
+
     commandBuffer.beginRenderPass(renderpassInfo, vk::SubpassContents::eInline);
 
-    draw_objects(commandBuffer, renderables.data(), renderables.size());
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipeline);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipelineLayout, 0, {*graphicsDescriptor}, {});
+    commandBuffer.draw(3, 1, 0, 0);
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
-
-    commandBuffer.endRenderPass();           // Finalize the renderpass
-    commandBuffer.end(); // Finalize the command buffer for execution--we can no longer add commands.
+    commandBuffer.endRenderPass(); // Finalize the renderpass
+    commandBuffer.end();           // Finalize the command buffer for execution--we can no longer add commands.
 
     // Prepare the submission to the queue. We wait on `presentSemaphore`, as it's only signaled when the swapchain is
     // ready. We will then signal `renderSemaphore`, to inform that rendering has finished.
@@ -1089,9 +1174,9 @@ void VulkanEngine::run() {
             ImGui_ImplSDL2_ProcessEvent(&windowEvent);
             switch (windowEvent.type) {
                 case SDL_KEYDOWN:
-//                    switch (windowEvent.key.keysym.sym) {
-//                        default:
-//                    }
+                    //                    switch (windowEvent.key.keysym.sym) {
+                    //                        default:
+                    //                    }
                     break;
                 case SDL_MOUSEBUTTONDOWN:
                     // Refresh relative mouse coordinates before motion is handled.
@@ -1135,7 +1220,7 @@ void VulkanEngine::run() {
         // --- Movement Calculations ---
         auto moveSensitivity = 0.25f * (static_cast<float>(ticksMs - startTicksMs) / 17.0f); // This breaks down past 1000Hz!
         // Handle continuously-held key input for movement.
-        auto *keyStates = SDL_GetKeyboardState(nullptr);
+        auto *keyStates = SDL_GetKeyboardState({});
         camera += static_cast<float>(keyStates[SDL_SCANCODE_W]) * moveSensitivity * forward;
         camera += static_cast<float>(keyStates[SDL_SCANCODE_A]) * moveSensitivity * left;
         camera -= static_cast<float>(keyStates[SDL_SCANCODE_S]) * moveSensitivity * forward;

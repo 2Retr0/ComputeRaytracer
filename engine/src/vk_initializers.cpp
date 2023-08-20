@@ -271,3 +271,32 @@ vk::WriteDescriptorSet vkinit::write_descriptor_image(vk::DescriptorType type, v
 
     return write;
 }
+
+
+vk::BufferMemoryBarrier vkinit::buffer_memory_barrier(vk::Buffer buffer, uint32_t queue) {
+    auto barrier = vk::BufferMemoryBarrier();
+    barrier.buffer = buffer;
+    barrier.size = VK_WHOLE_SIZE;
+    barrier.srcQueueFamilyIndex = queue;
+    barrier.dstQueueFamilyIndex = queue;
+
+    return barrier;
+}
+
+
+vk::ImageMemoryBarrier vkinit::image_memory_barrier(vk::Image image, vk::AccessFlags srcAccessMask, vk::AccessFlags dstAccessMask, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::ImageAspectFlags aspectMask) {
+    auto barrier = vk::ImageMemoryBarrier();
+    barrier.srcAccessMask = srcAccessMask;
+    barrier.dstAccessMask = dstAccessMask;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = aspectMask;
+    barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    return barrier;
+}
+
