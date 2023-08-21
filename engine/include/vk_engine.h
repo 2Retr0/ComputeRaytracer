@@ -207,6 +207,7 @@ public:
     vk::raii::DescriptorSetLayout graphicsSetLayout = nullptr;
     vk::raii::DescriptorSet graphicsDescriptor = nullptr;
     Texture computeTexture;
+    vk::raii::Sampler computeSampler = nullptr;
 
 private:
     void init_vulkan();

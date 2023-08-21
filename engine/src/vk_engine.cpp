@@ -384,9 +384,6 @@ void VulkanEngine::init_pipelines() {
     std::unordered_map<std::string, std::unique_ptr<vk::raii::ShaderModule>> shaderModules;
     std::string shaderBaseDirectory = "../shaders/";
     std::string shaderNames[] = {
-        "default_lit.frag",
-        "textured_lit.frag",
-        "tri_mesh.vert",
         "compute.comp",
         "compute.vert",
         "compute.frag"
@@ -433,75 +430,80 @@ void VulkanEngine::init_pipelines() {
     // Default depth testing
     pipelineBuilder.depthStencil = vkinit::depth_stencil_create_info(true, true, vk::CompareOp::eLessOrEqual);
 
-    auto vertexDescription = Vertex::get_vertex_description();
-    // Connect the pipeline builder vertex input info to the one we get from Vertex
-    pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-    pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
+    pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = 0;
+    pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+    pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = 0;
+    pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = nullptr;
 
-    pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-    pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
-
-
-    // --- Colored Mesh Pipeline Layout ---
-    // Build the pipeline layout that controls the inputs/outputs of the shader.
-    // We are not using descriptor sets or other systems yet, so no need to use anything other than empty default.
-    auto meshPipelineLayoutInfo = vkinit::pipeline_layout_create_info();
-
-    // Setup push constants
-    // clang-format off
-    auto pushConstant = vk::PushConstantRange()
-        .setStageFlags(vk::ShaderStageFlagBits::eVertex) // Push constant range is accessible only in the vertex shader
-        .setOffset(0)                                    // Push constant range starts at the beginning
-        .setSize(sizeof(MeshPushConstants));             // Push constant range has size of `MeshPushConstants` struct
-    // clang-format on
-
-    meshPipelineLayoutInfo.pPushConstantRanges = &pushConstant;
-    meshPipelineLayoutInfo.pushConstantRangeCount = 1;
-
-    // Hook the global set layout--we need to let the pipeline know what descriptors will be bound to it.
-    vk::DescriptorSetLayout coloredSetLayouts[] = {*globalSetLayout, *objectSetLayout};
-    meshPipelineLayoutInfo.setLayoutCount = 2;
-    meshPipelineLayoutInfo.pSetLayouts = coloredSetLayouts;
-
-    auto meshPipelineLayout = vk::raii::PipelineLayout(device, meshPipelineLayoutInfo);
-
-    // --- Colored Mesh Pipeline ---
-    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
-    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex, **shaderModules["tri_mesh.vert"]));
-    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["default_lit.frag"]));
-
-    pipelineBuilder.pipelineLayout = *meshPipelineLayout; // Use the mesh pipeline layout w/ push constants we created.
-
-    auto coloredMeshPipeline = pipelineBuilder.build_graphics_pipeline(device, renderpass);
-    // Now our mesh pipeline has the space for the push constants, so we can now execute the command to use them.
-    create_material(std::move(coloredMeshPipeline), std::move(meshPipelineLayout), "defaultmesh");
-
-
-    // --- Textured Mesh Pipeline Layout ---
-    auto texturedPipelineLayoutInfo = meshPipelineLayoutInfo;
-    vk::DescriptorSetLayout texturedSetLayouts[] = {*globalSetLayout, *objectSetLayout, *singleTextureSetLayout};
-
-    texturedPipelineLayoutInfo.setLayoutCount = 3;
-    texturedPipelineLayoutInfo.pSetLayouts = texturedSetLayouts;
-
-    auto texturedPipelineLayout = vk::raii::PipelineLayout(device, texturedPipelineLayoutInfo);
-    auto texturedPipelineLayout2 = vk::raii::PipelineLayout(device, texturedPipelineLayoutInfo);
-
-    // --- Textured Mesh Pipeline ---
-    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
-    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex, **shaderModules["tri_mesh.vert"]));
-    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["textured_lit.frag"]));
-
-    pipelineBuilder.pipelineLayout = *texturedPipelineLayout; // Connect the new pipeline layout to the pipeline builder
-
-    auto texturedMeshPipeline = pipelineBuilder.build_graphics_pipeline(device, renderpass);
-    auto texturedMeshPipeline2 = pipelineBuilder.build_graphics_pipeline(device, renderpass);
-    create_material(std::move(texturedMeshPipeline), std::move(texturedPipelineLayout), "texturedmesh");
-    create_material(std::move(texturedMeshPipeline2), std::move(texturedPipelineLayout2), "texturedmesh2");
+//    auto vertexDescription = Vertex::get_vertex_description();
+//    // Connect the pipeline builder vertex input info to the one we get from Vertex
+//    pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+//    pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
+//
+//    pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+//    pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
+//
+//
+//    // --- Colored Mesh Pipeline Layout ---
+//    // Build the pipeline layout that controls the inputs/outputs of the shader.
+//    // We are not using descriptor sets or other systems yet, so no need to use anything other than empty default.
+//    auto meshPipelineLayoutInfo = vkinit::pipeline_layout_create_info();
+//
+//    // Setup push constants
+//    // clang-format off
+//    auto pushConstant = vk::PushConstantRange()
+//        .setStageFlags(vk::ShaderStageFlagBits::eVertex) // Push constant range is accessible only in the vertex shader
+//        .setOffset(0)                                    // Push constant range starts at the beginning
+//        .setSize(sizeof(MeshPushConstants));             // Push constant range has size of `MeshPushConstants` struct
+//    // clang-format on
+//
+//    meshPipelineLayoutInfo.pPushConstantRanges = &pushConstant;
+//    meshPipelineLayoutInfo.pushConstantRangeCount = 1;
+//
+//    // Hook the global set layout--we need to let the pipeline know what descriptors will be bound to it.
+//    vk::DescriptorSetLayout coloredSetLayouts[] = {*globalSetLayout, *objectSetLayout};
+//    meshPipelineLayoutInfo.setLayoutCount = 2;
+//    meshPipelineLayoutInfo.pSetLayouts = coloredSetLayouts;
+//
+//    auto meshPipelineLayout = vk::raii::PipelineLayout(device, meshPipelineLayoutInfo);
+//
+//    // --- Colored Mesh Pipeline ---
+//    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+//    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex, **shaderModules["tri_mesh.vert"]));
+//    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["default_lit.frag"]));
+//
+//    pipelineBuilder.pipelineLayout = *meshPipelineLayout; // Use the mesh pipeline layout w/ push constants we created.
+//
+//    auto coloredMeshPipeline = pipelineBuilder.build_graphics_pipeline(device, renderpass);
+//    // Now our mesh pipeline has the space for the push constants, so we can now execute the command to use them.
+//    create_material(std::move(coloredMeshPipeline), std::move(meshPipelineLayout), "defaultmesh");
+//
+//
+//    // --- Textured Mesh Pipeline Layout ---
+//    auto texturedPipelineLayoutInfo = meshPipelineLayoutInfo;
+//    vk::DescriptorSetLayout texturedSetLayouts[] = {*globalSetLayout, *objectSetLayout, *singleTextureSetLayout};
+//
+//    texturedPipelineLayoutInfo.setLayoutCount = 3;
+//    texturedPipelineLayoutInfo.pSetLayouts = texturedSetLayouts;
+//
+//    auto texturedPipelineLayout = vk::raii::PipelineLayout(device, texturedPipelineLayoutInfo);
+//    auto texturedPipelineLayout2 = vk::raii::PipelineLayout(device, texturedPipelineLayoutInfo);
+//
+//    // --- Textured Mesh Pipeline ---
+//    pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+//    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex, **shaderModules["tri_mesh.vert"]));
+//    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["textured_lit.frag"]));
+//
+//    pipelineBuilder.pipelineLayout = *texturedPipelineLayout; // Connect the new pipeline layout to the pipeline builder
+//
+//    auto texturedMeshPipeline = pipelineBuilder.build_graphics_pipeline(device, renderpass);
+//    auto texturedMeshPipeline2 = pipelineBuilder.build_graphics_pipeline(device, renderpass);
+//    create_material(std::move(texturedMeshPipeline), std::move(texturedPipelineLayout), "texturedmesh");
+//    create_material(std::move(texturedMeshPipeline2), std::move(texturedPipelineLayout2), "texturedmesh2");
 
 
     // --- Compute Pipeline Layout ---
-    auto computePipelineLayoutInfo = meshPipelineLayoutInfo;
+    auto computePipelineLayoutInfo = vkinit::pipeline_layout_create_info();
     vk::DescriptorSetLayout computeSetLayouts[] = {*computeSetLayout};
 
     computePipelineLayoutInfo.setLayoutCount = 1;
@@ -519,7 +521,7 @@ void VulkanEngine::init_pipelines() {
     create_material(std::move(computePipeline), std::move(computePipelineLayout), "compute");
 
     // --- Graphics Pipeline Layout ---
-    auto graphicsPipelineLayoutInfo = meshPipelineLayoutInfo;
+    auto graphicsPipelineLayoutInfo = computePipelineLayoutInfo;
     vk::DescriptorSetLayout graphicsSetLayouts[] = {*graphicsSetLayout};
 
     graphicsPipelineLayoutInfo.setLayoutCount = 1;
@@ -529,8 +531,8 @@ void VulkanEngine::init_pipelines() {
 
     // --- Compute Pipeline ---
     pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
+    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eVertex, **shaderModules["compute.vert"]));
     pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["compute.frag"]));
-    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eFragment, **shaderModules["compute.vert"]));
 
     pipelineBuilder.pipelineLayout = *graphicsPipelineLayout;
 
@@ -540,46 +542,46 @@ void VulkanEngine::init_pipelines() {
 
 
 void VulkanEngine::load_images() {
-    auto lostEmpireImage = vkutil::load_image_from_asset(*this, "../assets/lost_empire-RGBA.tx");
-    auto imageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, lostEmpireImage.image, vk::ImageAspectFlagBits::eColor);
-    auto lostEmpire = Texture(lostEmpireImage, vk::raii::ImageView(device, imageviewInfo));
-    loadedTextures["empire_diffuse"] = Texture(std::move(lostEmpire));
-
-    auto fumoImage = vkutil::load_image_from_asset(*this, "../assets/cirno_low_u1_v1.tx");
-    auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, fumoImage.image, vk::ImageAspectFlagBits::eColor);
-    auto fumo = Texture(fumoImage, vk::raii::ImageView(device, fumoImageviewInfo));
-    loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
+//    auto lostEmpireImage = vkutil::load_image_from_asset(*this, "../assets/lost_empire-RGBA.tx");
+//    auto imageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, lostEmpireImage.image, vk::ImageAspectFlagBits::eColor);
+//    auto lostEmpire = Texture(lostEmpireImage, vk::raii::ImageView(device, imageviewInfo));
+//    loadedTextures["empire_diffuse"] = Texture(std::move(lostEmpire));
+//
+//    auto fumoImage = vkutil::load_image_from_asset(*this, "../assets/cirno_low_u1_v1.tx");
+//    auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, fumoImage.image, vk::ImageAspectFlagBits::eColor);
+//    auto fumo = Texture(fumoImage, vk::raii::ImageView(device, fumoImageviewInfo));
+//    loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
 }
 
 
 void VulkanEngine::load_meshes() {
-    Mesh triangleMesh, monkeyMesh, fumoMesh, lostEmpireMesh;
-    triangleMesh.vertices.resize(3);
-
-    triangleMesh.vertices[0].position = {1.f, 1.f, 0.f};
-    triangleMesh.vertices[1].position = {-1.f, 1.f, 0.f};
-    triangleMesh.vertices[2].position = {0.f, -1.f, 0.f};
-
-    triangleMesh.vertices[0].color = {0.f, 1.f, 0.f};
-    triangleMesh.vertices[1].color = {0.f, 1.f, 0.f};
-    triangleMesh.vertices[2].color = {0.f, 1.f, 0.f};
-
-    monkeyMesh.load_mesh_from_asset("../assets/monkey_smooth.mesh");
-    fumoMesh.load_mesh_from_asset("../assets/cirno_low.mesh");
-    lostEmpireMesh.load_mesh_from_asset("../assets/lost_empire.mesh");
-
-    // We need to make sure both meshes are sent to the GPU. We don't care about vertex normals.
-    upload_mesh(triangleMesh);
-    upload_mesh(monkeyMesh);
-    upload_mesh(fumoMesh);
-    upload_mesh(lostEmpireMesh);
-
-    // Note: that we are copying them. Eventually we will delete the hardcoded `monkey` and `triangle` meshes, so it's
-    //       no problem now.
-    meshes["triangle"] = Mesh(std::move(triangleMesh));
-    meshes["monkey"] = Mesh(std::move(monkeyMesh));
-    meshes["fumo"] = Mesh(std::move(fumoMesh));
-    meshes["empire"] = Mesh(std::move(lostEmpireMesh));
+//    Mesh triangleMesh, monkeyMesh, fumoMesh, lostEmpireMesh;
+//    triangleMesh.vertices.resize(3);
+//
+//    triangleMesh.vertices[0].position = {1.f, 1.f, 0.f};
+//    triangleMesh.vertices[1].position = {-1.f, 1.f, 0.f};
+//    triangleMesh.vertices[2].position = {0.f, -1.f, 0.f};
+//
+//    triangleMesh.vertices[0].color = {0.f, 1.f, 0.f};
+//    triangleMesh.vertices[1].color = {0.f, 1.f, 0.f};
+//    triangleMesh.vertices[2].color = {0.f, 1.f, 0.f};
+//
+//    monkeyMesh.load_mesh_from_asset("../assets/monkey_smooth.mesh");
+//    fumoMesh.load_mesh_from_asset("../assets/cirno_low.mesh");
+//    lostEmpireMesh.load_mesh_from_asset("../assets/lost_empire.mesh");
+//
+//    // We need to make sure both meshes are sent to the GPU. We don't care about vertex normals.
+//    upload_mesh(triangleMesh);
+//    upload_mesh(monkeyMesh);
+//    upload_mesh(fumoMesh);
+//    upload_mesh(lostEmpireMesh);
+//
+//    // Note: that we are copying them. Eventually we will delete the hardcoded `monkey` and `triangle` meshes, so it's
+//    //       no problem now.
+//    meshes["triangle"] = Mesh(std::move(triangleMesh));
+//    meshes["monkey"] = Mesh(std::move(monkeyMesh));
+//    meshes["fumo"] = Mesh(std::move(fumoMesh));
+//    meshes["empire"] = Mesh(std::move(lostEmpireMesh));
 }
 
 
@@ -630,65 +632,65 @@ void VulkanEngine::upload_mesh(Mesh &mesh) {
 
 
 void VulkanEngine::init_scene() {
-    // We create 1 monkey, add it as the first thing to the renderables array, and then we create a lot of triangles in
-    // a grid, and put them around the monkey.
-    RenderObject monkey = {
-        .mesh = get_mesh("monkey"),
-        .material = get_material("defaultmesh"),
-        .transformMatrix = glm::mat4 {1.0f},
-    };
-    renderables.push_back(monkey);
-
-    auto translation2 = glm::translate(glm::mat4 {1.0}, glm::vec3(4.5, 1, 0));
-    RenderObject fumo = {
-        .mesh = get_mesh("fumo"),
-        .material = get_material("texturedmesh2"),
-        .transformMatrix = translation2,
-    };
-    renderables.push_back(fumo);
-
-    for (int x = -20; x <= 20; x++) {
-        for (int y = -20; y <= 20; y++) {
-            auto translation = glm::translate(glm::mat4 {1.0}, glm::vec3(x, 0, y));
-            auto scale = glm::scale(glm::mat4 {1.0}, glm::vec3(0.2, 0.2, 0.2));
-
-            RenderObject triangle = {
-                .mesh = get_mesh("triangle"),
-                .material = get_material("defaultmesh"),
-                .transformMatrix = translation * scale,
-            };
-            renderables.push_back(triangle);
-        }
-    }
-
-    //    RenderObject map = {
-    //        .mesh = get_mesh("empire"),
-    //        .material = get_material("texturedmesh"),
-    //        .transformMatrix = glm::translate(glm::vec3 {5, -10, 0}),
-    //    };
-    //    renderables.push_back(map);
-
-    // --- Textures ---
-    auto *texturedMaterial = get_material("texturedmesh");
-    auto *texturedMaterial2 = get_material("texturedmesh2");
-    // Allocate the descriptor set for single-texture to use on the material.
-    auto textureDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *singleTextureSetLayout);
-    texturedMaterial->textureSet = std::move(vk::raii::DescriptorSets(device, textureDescriptorSetAllocInfo).front());
-    texturedMaterial2->textureSet = std::move(vk::raii::DescriptorSets(device, textureDescriptorSetAllocInfo).front());
-
-    // Create a sampler for the scene. We want it to be blocky, so we use `VK_FILTER_NEAREST`.
-    auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eNearest);
-    blockySampler = vk::raii::Sampler(vk::raii::Sampler(device, samplerInfo));
-
-    // Write the descriptor set so that it points to our empire_diffuse texture
-    auto imageBufferInfo = vk::DescriptorImageInfo(
-        *blockySampler, *loadedTextures["empire_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-    //    auto textureWrite = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial->textureSet, &imageBufferInfo, 0);
-    //    device.updateDescriptorSets({textureWrite}, {});
-
-    imageBufferInfo.imageView = *loadedTextures["fumo_diffuse"].imageView;
-    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
-    device.updateDescriptorSets({textureWrite2}, {});
+//    // We create 1 monkey, add it as the first thing to the renderables array, and then we create a lot of triangles in
+//    // a grid, and put them around the monkey.
+//    RenderObject monkey = {
+//        .mesh = get_mesh("monkey"),
+//        .material = get_material("defaultmesh"),
+//        .transformMatrix = glm::mat4 {1.0f},
+//    };
+//    renderables.push_back(monkey);
+//
+//    auto translation2 = glm::translate(glm::mat4 {1.0}, glm::vec3(4.5, 1, 0));
+//    RenderObject fumo = {
+//        .mesh = get_mesh("fumo"),
+//        .material = get_material("texturedmesh2"),
+//        .transformMatrix = translation2,
+//    };
+//    renderables.push_back(fumo);
+//
+//    for (int x = -20; x <= 20; x++) {
+//        for (int y = -20; y <= 20; y++) {
+//            auto translation = glm::translate(glm::mat4 {1.0}, glm::vec3(x, 0, y));
+//            auto scale = glm::scale(glm::mat4 {1.0}, glm::vec3(0.2, 0.2, 0.2));
+//
+//            RenderObject triangle = {
+//                .mesh = get_mesh("triangle"),
+//                .material = get_material("defaultmesh"),
+//                .transformMatrix = translation * scale,
+//            };
+//            renderables.push_back(triangle);
+//        }
+//    }
+//
+//    //    RenderObject map = {
+//    //        .mesh = get_mesh("empire"),
+//    //        .material = get_material("texturedmesh"),
+//    //        .transformMatrix = glm::translate(glm::vec3 {5, -10, 0}),
+//    //    };
+//    //    renderables.push_back(map);
+//
+//    // --- Textures ---
+//    auto *texturedMaterial = get_material("texturedmesh");
+//    auto *texturedMaterial2 = get_material("texturedmesh2");
+//    // Allocate the descriptor set for single-texture to use on the material.
+//    auto textureDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *singleTextureSetLayout);
+//    texturedMaterial->textureSet = std::move(vk::raii::DescriptorSets(device, textureDescriptorSetAllocInfo).front());
+//    texturedMaterial2->textureSet = std::move(vk::raii::DescriptorSets(device, textureDescriptorSetAllocInfo).front());
+//
+//    // Create a sampler for the scene. We want it to be blocky, so we use `VK_FILTER_NEAREST`.
+//    auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eNearest);
+//    blockySampler = vk::raii::Sampler(device, samplerInfo);
+//
+//    // Write the descriptor set so that it points to our empire_diffuse texture
+//    auto imageBufferInfo = vk::DescriptorImageInfo(
+//        *blockySampler, *loadedTextures["empire_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
+//    //    auto textureWrite = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial->textureSet, &imageBufferInfo, 0);
+//    //    device.updateDescriptorSets({textureWrite}, {});
+//
+//    imageBufferInfo.imageView = *loadedTextures["fumo_diffuse"].imageView;
+//    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
+//    device.updateDescriptorSets({textureWrite2}, {});
 }
 
 
@@ -911,7 +913,7 @@ void VulkanEngine::init_descriptors() {
         // Compute shader
         // clang-format on
         auto computeImageInfo = vkinit::image_create_info(
-            vk::Format::eR8G8B8A8Unorm,
+            vk::Format::eR8G8B8A8Srgb, // Want driver to automatically take care of gamma correction!
             vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
             vk::Extent3D(windowExtent.width, windowExtent.height, 1));
         computeImageInfo.initialLayout = vk::ImageLayout::eUndefined;
@@ -920,10 +922,9 @@ void VulkanEngine::init_descriptors() {
                                               .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
         // clang-format on
         auto computeImage = static_cast<AllocatedImage>(allocator->createImage(computeImageInfo, computeImageAllocationInfo));
-        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, computeImage.image, vk::ImageAspectFlagBits::eColor);
+        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Srgb, computeImage.image, vk::ImageAspectFlagBits::eColor);
 
         computeTexture = Texture(computeImage, vk::raii::ImageView(device, computeViewInfo));
-
 
         std::vector<vk::DescriptorSetLayoutBinding> computeBindings = {
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 0),
@@ -934,10 +935,12 @@ void VulkanEngine::init_descriptors() {
         auto computeSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *computeSetLayout);
         computeDescriptor = std::move(device.allocateDescriptorSets(computeSetAllocInfo).front());
 
-        auto outBufferInfo = vk::DescriptorImageInfo(nullptr, *computeTexture.imageView, vk::ImageLayout::eGeneral);
+        auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eNearest);
+        computeSampler = vk::raii::Sampler(device, samplerInfo);
+        auto computeBufferInfo = vk::DescriptorImageInfo(*computeSampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
 
         std::vector<vk::WriteDescriptorSet> computeWrites = {
-            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &outBufferInfo, 0),
+            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeBufferInfo, 0),
         };
 
         device.updateDescriptorSets(computeWrites, {});
@@ -951,10 +954,10 @@ void VulkanEngine::init_descriptors() {
         graphicsSetLayout = vk::raii::DescriptorSetLayout(device, graphicsSetInfo);
 
         auto graphicsSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *graphicsSetLayout);
-        graphicsDescriptor = std::move(device.allocateDescriptorSets(computeSetAllocInfo).front());
+        graphicsDescriptor = std::move(device.allocateDescriptorSets(graphicsSetAllocInfo).front());
 
         std::vector<vk::WriteDescriptorSet> graphicsWrites = {
-            vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *graphicsDescriptor, &outBufferInfo, 0),
+            vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *graphicsDescriptor, &computeBufferInfo, 0),
         };
 
         device.updateDescriptorSets(graphicsWrites, {});
@@ -1049,7 +1052,7 @@ void VulkanEngine::cleanup() {
 
         mainDeletionQueue.flush();
 
-        allocator->destroy();
+//        allocator->destroy();
         SDL_DestroyWindow(window);
     }
 }
@@ -1089,37 +1092,39 @@ void VulkanEngine::draw() {
 
     vk::ClearValue clearValues[] = {clearValue, depthClear};
 
-    // --- Compute Memory Barrier ---
-    auto computeMaterial = get_material("compute");
-    auto imageMemoryBarrier = vkinit::image_memory_barrier(computeTexture.image.image, {}, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, vk::ImageAspectFlagBits::eColor);
+    {
+        // --- Compute Memory Barrier ---
+        auto computeMaterial = get_material("compute");
+        auto imageMemoryBarrier = vkinit::image_memory_barrier(computeTexture.image.image, {}, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::ImageAspectFlagBits::eColor);
 
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, {imageMemoryBarrier});
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computeMaterial->pipeline);
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, {*computeDescriptor}, {});
-    commandBuffer.dispatch(windowExtent.width / 16, windowExtent.height / 16, 1);
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, {imageMemoryBarrier});
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computeMaterial->pipeline);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, {*computeDescriptor}, {});
+        commandBuffer.dispatch(windowExtent.width / 16, windowExtent.height / 16, 1);
 
-    imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-    imageMemoryBarrier.dstAccessMask = {};
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, {imageMemoryBarrier});
+        imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+        imageMemoryBarrier.dstAccessMask = {};
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, {imageMemoryBarrier});
 
 
 
-    // Start the main renderpass. We will use the clear color from above, and the framebuffer of the index the swapchain
-    // gave us.
-    auto graphicsMaterial = get_material("graphics");
-    auto renderpassInfo = vkinit::renderpass_begin_info(*renderpass, windowExtent, *framebuffers[swapchainImageIndex]);
-    renderpassInfo.clearValueCount = 2;
-    renderpassInfo.pClearValues = &clearValues[0];
+        // Start the main renderpass. We will use the clear color from above, and the framebuffer of the index the swapchain
+        // gave us.
+        auto graphicsMaterial = get_material("graphics");
+        auto renderpassInfo = vkinit::renderpass_begin_info(*renderpass, windowExtent, *framebuffers[swapchainImageIndex]);
+        renderpassInfo.clearValueCount = 2;
+        renderpassInfo.pClearValues = &clearValues[0];
 
-    imageMemoryBarrier.srcAccessMask = {};
-    imageMemoryBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, {imageMemoryBarrier});
+        imageMemoryBarrier.srcAccessMask = {};
+        imageMemoryBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, {imageMemoryBarrier});
 
-    commandBuffer.beginRenderPass(renderpassInfo, vk::SubpassContents::eInline);
+        commandBuffer.beginRenderPass(renderpassInfo, vk::SubpassContents::eInline);
 
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipeline);
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipelineLayout, 0, {*graphicsDescriptor}, {});
-    commandBuffer.draw(3, 1, 0, 0);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipeline);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipelineLayout, 0, {*graphicsDescriptor}, {});
+        commandBuffer.draw(3, 1, 0, 0);
+    }
 
     commandBuffer.endRenderPass(); // Finalize the renderpass
     commandBuffer.end();           // Finalize the command buffer for execution--we can no longer add commands.
