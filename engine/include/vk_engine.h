@@ -2,6 +2,7 @@
 
 #include "vk_mesh.h"
 #include "vk_types.h"
+#include "camera.h"
 
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -182,9 +183,9 @@ public:
     AllocatedBuffer sceneParameterBuffer;
 
     // --- Camera ---
-    glm::vec3 camera = glm::vec3(0.f, 6.f, 10.f);
-    glm::vec3 up = glm::vec3(0.f, 1.f, 0.f);
-    glm::vec3 forward = glm::vec3(0.f, 0.f, -1.f);
+    glm::vec3 cameraPos = glm::vec3(13, 2, 3);
+    glm::vec3 up = glm::vec3(0, 1, 0);
+    glm::vec3 forward = glm::vec3(0, 0, -1);
 
     // --- Double Buffering ---
     FrameData frames[FRAME_OVERLAP];
@@ -208,6 +209,8 @@ public:
     vk::raii::DescriptorSet graphicsDescriptor = nullptr;
     Texture computeTexture;
     vk::raii::Sampler computeSampler = nullptr;
+    AllocatedBuffer computeParameterBuffer;
+    Camera camera;
 
 private:
     void init_vulkan();

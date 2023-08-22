@@ -769,87 +769,87 @@ Mesh *VulkanEngine::get_mesh(const std::string &name) {
 
 
 void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, RenderObject *first, uint32_t count) {
-    const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData)));
-
-    auto &currentFrame = get_current_frame();
-    // --- Writing Camera Data (View) ---
-    auto view = glm::lookAt(camera, camera + forward, up);
-    auto projection = glm::perspective(glm::radians(70.f), 16.f / 9.f, 0.1f, 200.f);
-    projection[1][1] *= -1; // Correct OpenGL coordinate system
-
-    // --- Writing Scene Data ---
-    auto cameraParameters = GPUCameraData(view, projection, projection * view);
-    auto framed = static_cast<float>(animationFrameNumber) / 30.f;
-    auto frameIndex = frameNumber % FRAME_OVERLAP;
-    sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
-    sceneParameters.sunlightDirection = {sin(framed) * 3.0, 2.0, cos(framed) * 3.0, 0.1};
-
-    uint8_t *sceneData;
-    VK_CHECK(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData));
-
-    // Write camera parameter data
-    sceneData += FRAME_OFFSET * frameIndex;
-    memcpy(sceneData, &cameraParameters, sizeof(GPUCameraData));
-
-    // Write scene parameter data
-    sceneData += sizeof(GPUCameraData);
-    memcpy(sceneData, &sceneParameters, sizeof(GPUSceneData));
-
-    allocator->unmapMemory(sceneParameterBuffer.allocation);
-
-    // --- Writing Object Storage Data ---
-    void *objectData;
-    VK_CHECK(allocator->mapMemory(currentFrame.objectBuffer.allocation, &objectData));
-
-    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
-    // normally.
-    auto *objectSSBO = reinterpret_cast<GPUObjectData *>(objectData);
-    for (uint32_t i = 0; i < count; i++) {
-        auto &object = first[i];
-        objectSSBO[i].modelMatrix = object.transformMatrix;
-    }
-    allocator->unmapMemory(currentFrame.objectBuffer.allocation);
-
-    // --- Draw Setup ---
-    Mesh *lastMesh = {};
-    Material *lastMaterial = {};
-    for (uint32_t i = 0; i < count; i++) {
-        auto &object = first[i];
-
-        // Only bind the pipeline if it doesn't match with the already bound one.
-        if (object.material != lastMaterial) {
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *object.material->pipeline);
-            lastMaterial = object.material;
-
-            // Bind the camera data descriptor set when changing pipelines.
-            // Offset for our scene buffer--dynamic uniform buffers allow us to specify offset when binding.
-            auto uniform_offset = FRAME_OFFSET * frameIndex;
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 0, {*globalDescriptor}, uniform_offset);
-
-            // Bind the object data descriptor set
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 1, {*currentFrame.objectDescriptor}, {});
-
-            // Binding the texture descriptor set if the texture set handle isn't null.
-            if (*object.material->textureSet) {
-                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 2, {*object.material->textureSet}, {});
-            }
-        }
-
-        // Upload the model space mesh matrix to the GPU via push constants.
-        MeshPushConstants constants = {.renderMatrix = object.transformMatrix};
-        commandBuffer.pushConstants<MeshPushConstants>(
-            *object.material->pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, constants);
-
-        // Only bind the mesh vertex buffer with offset 0 if it's different from the last bound one.
-        if (object.mesh != lastMesh) {
-            vk::DeviceSize offset = 0;
-            commandBuffer.bindVertexBuffers(0, {object.mesh->vertexBuffer.buffer}, {offset});
-            lastMesh = object.mesh;
-        }
-
-        // We can now draw the mesh! We pass the index into the `vkCmdDraw` call to send the instance index to the shader.
-        commandBuffer.draw(object.mesh->vertices.size(), 1, 0, i);
-    }
+//    const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData)));
+//
+//    auto &currentFrame = get_current_frame();
+//    // --- Writing Camera Data (View) ---
+//    auto view = glm::lookAt(camera, camera + forward, up);
+//    auto projection = glm::perspective(glm::radians(70.f), 16.f / 9.f, 0.1f, 200.f);
+//    projection[1][1] *= -1; // Correct OpenGL coordinate system
+//
+//    // --- Writing Scene Data ---
+//    auto cameraParameters = GPUCameraData(view, projection, projection * view);
+//    auto framed = static_cast<float>(animationFrameNumber) / 30.f;
+//    auto frameIndex = frameNumber % FRAME_OVERLAP;
+//    sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
+//    sceneParameters.sunlightDirection = {sin(framed) * 3.0, 2.0, cos(framed) * 3.0, 0.1};
+//
+//    uint8_t *sceneData;
+//    VK_CHECK(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData));
+//
+//    // Write camera parameter data
+//    sceneData += FRAME_OFFSET * frameIndex;
+//    memcpy(sceneData, &cameraParameters, sizeof(GPUCameraData));
+//
+//    // Write scene parameter data
+//    sceneData += sizeof(GPUCameraData);
+//    memcpy(sceneData, &sceneParameters, sizeof(GPUSceneData));
+//
+//    allocator->unmapMemory(sceneParameterBuffer.allocation);
+//
+//    // --- Writing Object Storage Data ---
+//    void *objectData;
+//    VK_CHECK(allocator->mapMemory(currentFrame.objectBuffer.allocation, &objectData));
+//
+//    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
+//    // normally.
+//    auto *objectSSBO = reinterpret_cast<GPUObjectData *>(objectData);
+//    for (uint32_t i = 0; i < count; i++) {
+//        auto &object = first[i];
+//        objectSSBO[i].modelMatrix = object.transformMatrix;
+//    }
+//    allocator->unmapMemory(currentFrame.objectBuffer.allocation);
+//
+//    // --- Draw Setup ---
+//    Mesh *lastMesh = {};
+//    Material *lastMaterial = {};
+//    for (uint32_t i = 0; i < count; i++) {
+//        auto &object = first[i];
+//
+//        // Only bind the pipeline if it doesn't match with the already bound one.
+//        if (object.material != lastMaterial) {
+//            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *object.material->pipeline);
+//            lastMaterial = object.material;
+//
+//            // Bind the camera data descriptor set when changing pipelines.
+//            // Offset for our scene buffer--dynamic uniform buffers allow us to specify offset when binding.
+//            auto uniform_offset = FRAME_OFFSET * frameIndex;
+//            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 0, {*globalDescriptor}, uniform_offset);
+//
+//            // Bind the object data descriptor set
+//            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 1, {*currentFrame.objectDescriptor}, {});
+//
+//            // Binding the texture descriptor set if the texture set handle isn't null.
+//            if (*object.material->textureSet) {
+//                commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *object.material->pipelineLayout, 2, {*object.material->textureSet}, {});
+//            }
+//        }
+//
+//        // Upload the model space mesh matrix to the GPU via push constants.
+//        MeshPushConstants constants = {.renderMatrix = object.transformMatrix};
+//        commandBuffer.pushConstants<MeshPushConstants>(
+//            *object.material->pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, constants);
+//
+//        // Only bind the mesh vertex buffer with offset 0 if it's different from the last bound one.
+//        if (object.mesh != lastMesh) {
+//            vk::DeviceSize offset = 0;
+//            commandBuffer.bindVertexBuffers(0, {object.mesh->vertexBuffer.buffer}, {offset});
+//            lastMesh = object.mesh;
+//        }
+//
+//        // We can now draw the mesh! We pass the index into the `vkCmdDraw` call to send the instance index to the shader.
+//        commandBuffer.draw(object.mesh->vertices.size(), 1, 0, i);
+//    }
 }
 
 FrameData &VulkanEngine::get_current_frame() {
@@ -893,7 +893,7 @@ void VulkanEngine::init_descriptors() {
     // Global descriptor set
     // Binding for scene data + camera data at 0 and scene data at 1
     auto sceneBinding = vkinit::descriptor_set_layout_binding(
-        vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0);
+        vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 0);
     auto globalSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &sceneBinding);
     globalSetLayout = vk::raii::DescriptorSetLayout(device, globalSetInfo);
 
@@ -927,20 +927,28 @@ void VulkanEngine::init_descriptors() {
         computeTexture = Texture(computeImage, vk::raii::ImageView(device, computeViewInfo));
 
         std::vector<vk::DescriptorSetLayoutBinding> computeBindings = {
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 0),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 0),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 1),
         };
-        auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &computeBindings[0]);
+        auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, computeBindings.size(), computeBindings.data());
         computeSetLayout = vk::raii::DescriptorSetLayout(device, computeSetInfo);
 
         auto computeSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *computeSetLayout);
         computeDescriptor = std::move(device.allocateDescriptorSets(computeSetAllocInfo).front());
 
+        // Compute camera
+        const auto COMPUTE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(CameraProperties));
+        computeParameterBuffer = create_buffer(COMPUTE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
+        auto computeCameraBufferInfo = vk::DescriptorBufferInfo(computeParameterBuffer.buffer, 0, sizeof(CameraProperties));
+
+        // Compute texture
         auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eNearest);
         computeSampler = vk::raii::Sampler(device, samplerInfo);
-        auto computeBufferInfo = vk::DescriptorImageInfo(*computeSampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
+        auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeSampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
 
         std::vector<vk::WriteDescriptorSet> computeWrites = {
-            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeBufferInfo, 0),
+            vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *computeDescriptor, &computeCameraBufferInfo, 0),
+            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeTextureBufferInfo, 1),
         };
 
         device.updateDescriptorSets(computeWrites, {});
@@ -957,7 +965,7 @@ void VulkanEngine::init_descriptors() {
         graphicsDescriptor = std::move(device.allocateDescriptorSets(graphicsSetAllocInfo).front());
 
         std::vector<vk::WriteDescriptorSet> graphicsWrites = {
-            vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *graphicsDescriptor, &computeBufferInfo, 0),
+            vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *graphicsDescriptor, &computeTextureBufferInfo, 0),
         };
 
         device.updateDescriptorSets(graphicsWrites, {});
@@ -1093,13 +1101,29 @@ void VulkanEngine::draw() {
     vk::ClearValue clearValues[] = {clearValue, depthClear};
 
     {
+        const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(CameraProperties)));
+
+        // --- Writing Scene Data ---
+        auto cameraParameters = camera.getProperties();
+
+        uint8_t *computeCameraData;
+        VK_CHECK(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeCameraData));
+
+        // Write camera parameter data
+        auto frameIndex = frameNumber % FRAME_OVERLAP;
+        auto uniformOffset = FRAME_OFFSET * frameIndex;
+        computeCameraData += uniformOffset;
+        memcpy(computeCameraData, &cameraParameters, sizeof(CameraProperties));
+
+        allocator->unmapMemory(computeParameterBuffer.allocation);
+
         // --- Compute Memory Barrier ---
         auto computeMaterial = get_material("compute");
         auto imageMemoryBarrier = vkinit::image_memory_barrier(computeTexture.image.image, {}, vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::ImageAspectFlagBits::eColor);
 
         commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, {imageMemoryBarrier});
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computeMaterial->pipeline);
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, {*computeDescriptor}, {});
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, *computeDescriptor, uniformOffset);
         commandBuffer.dispatch(windowExtent.width / 16, windowExtent.height / 16, 1);
 
         imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
@@ -1163,7 +1187,6 @@ void VulkanEngine::draw() {
 void VulkanEngine::run() {
     SDL_Event windowEvent;
     bool shouldQuit = false;
-    auto left = glm::cross(up, forward);
     auto mouseSensitivity = 0.005f; // Mouse sensitivity is static, move sensitivity is based on frame time!
     int mouseX, mouseY;
 
@@ -1223,27 +1246,6 @@ void VulkanEngine::run() {
         }
 
         // --- Movement Calculations ---
-        auto moveSensitivity = 0.25f * (static_cast<float>(ticksMs - startTicksMs) / 17.0f); // This breaks down past 1000Hz!
-        // Handle continuously-held key input for movement.
-        auto *keyStates = SDL_GetKeyboardState({});
-        camera += static_cast<float>(keyStates[SDL_SCANCODE_W]) * moveSensitivity * forward;
-        camera += static_cast<float>(keyStates[SDL_SCANCODE_A]) * moveSensitivity * left;
-        camera -= static_cast<float>(keyStates[SDL_SCANCODE_S]) * moveSensitivity * forward;
-        camera -= static_cast<float>(keyStates[SDL_SCANCODE_D]) * moveSensitivity * left;
-        camera += static_cast<float>(keyStates[SDL_SCANCODE_SPACE]) * glm::vec3(0.f, moveSensitivity, 0.f);
-        camera -= static_cast<float>(keyStates[SDL_SCANCODE_LSHIFT]) * glm::vec3(0.f, moveSensitivity, 0.f);
-
-        // Handle held mouse input for mouse movement->camera movement translation.
-        if (SDL_GetMouseState(&mouseX, &mouseY) & SDL_BUTTON_LMASK) {
-            SDL_GetRelativeMouseState(&mouseX, &mouseY);
-
-            // Calculate rotation matrix
-            float angleX = static_cast<float>(mouseX) * -mouseSensitivity;
-            float angleY = static_cast<float>(mouseY) * mouseSensitivity;
-            glm::mat3 rotate = glm::rotate(glm::mat4(1.0f), angleX, up) * glm::rotate(glm::mat4(1.0f), angleY, left);
-
-            forward = rotate * forward;
-            left = glm::cross(up, forward);
-        }
+        camera.calculateMovement(ticksMs - startTicksMs);
     }
 }
