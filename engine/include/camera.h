@@ -14,6 +14,8 @@ struct CameraProperties {
     glm::vec4 lowerLeftCorner;
     glm::vec4 horizontal;
     glm::vec4 vertical;
+    float lensRadius;
+    float iteration;
 };
 
 class Camera {
@@ -22,12 +24,14 @@ public:
         auto theta = glm::radians(fovDegrees);
         viewportHeight = 2.0f * glm::tan(theta / 2.0f);
         viewportWidth = aspectRatio * viewportHeight;
+        lensRadius = aperture * 0.5f;
 
         cameraBackward = glm::normalize(from - at);
         calculateProperties();
     }
 
     void calculateMovement(float tickDelta) {
+        auto oldProperties = cameraBackward + from;
         auto moveSensitivity = 0.25f * (tickDelta / 17.0f); // This breaks down past 1000Hz!
 
         // Handle continuously-held key input for movement.
@@ -52,6 +56,13 @@ public:
             cameraBackward = rotate * cameraBackward;
         }
         calculateProperties();
+
+        auto newProperties = cameraBackward + from;
+        if (oldProperties != newProperties) {
+            iteration = 1.0;
+        } else {
+            iteration++;
+        }
     }
 
     void calculateProperties() {
@@ -63,9 +74,6 @@ public:
         horizontal = focusDistance * viewportWidth * cameraRight;
         vertical = focusDistance * viewportHeight * cameraUp;
         lowerLeftCorner = from - horizontal*0.5f - vertical*0.5f - focusDistance*cameraBackward;
-
-        auto lensRadius = aperture * 0.5f;
-        auto offset = cameraRight * 0.5f + cameraUp * 0.5f;
     }
 
     [[nodiscard]] CameraProperties getProperties() const {
@@ -73,6 +81,7 @@ public:
             glm::vec4(from, 0), glm::vec4(at, 0), glm::vec4(up, 0),
             glm::vec4(cameraBackward, 0), glm::vec4(cameraRight, 0), glm::vec4(cameraUp, 0),
             glm::vec4(lowerLeftCorner, 0), glm::vec4(horizontal, 0), glm::vec4(vertical, 0),
+            lensRadius, iteration,
         };
     }
 
@@ -86,4 +95,6 @@ public:
     float aspectRatio = 16.0f / 10.0f;
     float aperture = 0.0f;
     float focusDistance = 10.0f; // (from - at).length();
+    float lensRadius;
+    float iteration = 1.0;
 };

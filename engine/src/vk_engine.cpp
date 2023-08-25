@@ -521,11 +521,22 @@ void VulkanEngine::init_pipelines() {
     create_material(std::move(computePipeline), std::move(computePipelineLayout), "compute");
 
     // --- Graphics Pipeline Layout ---
+
     auto graphicsPipelineLayoutInfo = computePipelineLayoutInfo;
     vk::DescriptorSetLayout graphicsSetLayouts[] = {*graphicsSetLayout};
 
     graphicsPipelineLayoutInfo.setLayoutCount = 1;
     graphicsPipelineLayoutInfo.pSetLayouts = graphicsSetLayouts;
+
+//    // clang-format off
+//    auto graphicsPushConstant = vk::PushConstantRange()
+//        .setStageFlags(vk::ShaderStageFlagBits::eFragment) // Push constant range is accessible only in the vertex shader
+//        .setOffset(0)                                    // Push constant range starts at the beginning
+//        .setSize(sizeof(CameraPushConstants));             // Push constant range has size of `MeshPushConstants` struct
+//    // clang-format on
+//
+//    graphicsPipelineLayoutInfo.pPushConstantRanges = &graphicsPushConstant;
+//    graphicsPipelineLayoutInfo.pushConstantRangeCount = 1;
 
     auto graphicsPipelineLayout = vk::raii::PipelineLayout(device, graphicsPipelineLayoutInfo);
 
@@ -913,7 +924,7 @@ void VulkanEngine::init_descriptors() {
         // Compute shader
         // clang-format on
         auto computeImageInfo = vkinit::image_create_info(
-            vk::Format::eR8G8B8A8Srgb, // Want driver to automatically take care of gamma correction!
+            vk::Format::eR32G32B32A32Uint,
             vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
             vk::Extent3D(windowExtent.width, windowExtent.height, 1));
         computeImageInfo.initialLayout = vk::ImageLayout::eUndefined;
@@ -922,7 +933,7 @@ void VulkanEngine::init_descriptors() {
                                               .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
         // clang-format on
         auto computeImage = static_cast<AllocatedImage>(allocator->createImage(computeImageInfo, computeImageAllocationInfo));
-        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Srgb, computeImage.image, vk::ImageAspectFlagBits::eColor);
+        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR32G32B32A32Uint, computeImage.image, vk::ImageAspectFlagBits::eColor);
 
         computeTexture = Texture(computeImage, vk::raii::ImageView(device, computeViewInfo));
 
@@ -1150,6 +1161,8 @@ void VulkanEngine::draw() {
         commandBuffer.draw(3, 1, 0, 0);
     }
 
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *commandBuffer);
+
     commandBuffer.endRenderPass(); // Finalize the renderpass
     commandBuffer.end();           // Finalize the command buffer for execution--we can no longer add commands.
 
@@ -1187,7 +1200,6 @@ void VulkanEngine::draw() {
 void VulkanEngine::run() {
     SDL_Event windowEvent;
     bool shouldQuit = false;
-    auto mouseSensitivity = 0.005f; // Mouse sensitivity is static, move sensitivity is based on frame time!
     int mouseX, mouseY;
 
     int lastFrameNumber = frameNumber;
@@ -1226,7 +1238,8 @@ void VulkanEngine::run() {
 
         // ImGui commands--we can call ImGui functions between `Imgui::NewFrame()` and `draw()`
         ImGui::Begin("VulkanTest2");
-        ImGui::Text("FPS: %d", fps);
+        ImGui::Text("     FPS | %d", fps);
+        ImGui::Text("Position | (%.2f, %.2f, %.2f)", camera.from.x, camera.from.y, camera.from.z);
         ImGui::End();
 
         draw();
