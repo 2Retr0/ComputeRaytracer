@@ -5,9 +5,9 @@
 #include <SDL.h>
 
 struct CameraProperties {
-    glm::vec4 from = glm::vec4(13, 2, 3, 0);
-    glm::vec4 at = glm::vec4(0, 0, 0, 0);
-    glm::vec4 up = glm::vec4(0, 1, 0, 0);
+    glm::vec4 from;
+    glm::vec4 at;
+    glm::vec4 up;
     glm::vec4 cameraBackward;
     glm::vec4 cameraRight;
     glm::vec4 cameraUp;
@@ -16,22 +16,18 @@ struct CameraProperties {
     glm::vec4 vertical;
     float lensRadius;
     float iteration;
+    float seed;
 };
 
 class Camera {
 public:
     explicit Camera() {
-        auto theta = glm::radians(fovDegrees);
-        viewportHeight = 2.0f * glm::tan(theta / 2.0f);
-        viewportWidth = aspectRatio * viewportHeight;
         lensRadius = aperture * 0.5f;
-
         cameraBackward = glm::normalize(from - at);
         calculateProperties();
     }
 
     void calculateMovement(float tickDelta) {
-        auto oldProperties = cameraBackward + from;
         auto moveSensitivity = 0.25f * (tickDelta / 17.0f); // This breaks down past 1000Hz!
 
         // Handle continuously-held key input for movement.
@@ -55,17 +51,13 @@ public:
 
             cameraBackward = rotate * cameraBackward;
         }
-        calculateProperties();
-
-        auto newProperties = cameraBackward + from;
-        if (oldProperties != newProperties) {
-            iteration = 1.0;
-        } else {
-            iteration++;
-        }
     }
 
     void calculateProperties() {
+        auto theta = glm::radians(fovDegrees);
+        viewportHeight = 2.0f * glm::tan(theta / 2.0f);
+        viewportWidth = aspectRatio * viewportHeight;
+
         // Orthonormal basis to describe camera orientation.
         // cameraBackward = glm::normalize(from - at);
         cameraRight = glm::normalize(glm::cross(glm::vec3(up), glm::vec3(cameraBackward)));
@@ -74,6 +66,14 @@ public:
         horizontal = focusDistance * viewportWidth * cameraRight;
         vertical = focusDistance * viewportHeight * cameraUp;
         lowerLeftCorner = from - horizontal*0.5f - vertical*0.5f - focusDistance*cameraBackward;
+
+        auto newProperties = cameraBackward + from + fovDegrees;
+        if (lastCheckedProperties != newProperties) {
+            iteration = 1;
+            lastCheckedProperties = newProperties;
+        } else {
+            iteration++;
+        }
     }
 
     [[nodiscard]] CameraProperties getProperties() const {
@@ -86,15 +86,16 @@ public:
     }
 
 public:
-    float mouseSensitivity = 0.005f; // Mouse sensitivity is static, move sensitivity is based on frame time!
+    const float mouseSensitivity = 0.005f; // Mouse sensitivity is static, move sensitivity is based on frame time!
     int mouseX{}, mouseY{};
     float viewportWidth, viewportHeight;
-    glm::vec3 from{13, 2, 3}, at{0, 0, 0}, up{0, 1, 0};
+    glm::vec3 from{10, 1.5, 2}, at{0, 0, -0.25}, up{0, 1, 0};
     glm::vec3 cameraBackward{}, cameraRight{}, cameraUp{}, lowerLeftCorner{}, horizontal{}, vertical{};
-    float fovDegrees = 90.0f;
+    float fovDegrees = 30.0f;
     float aspectRatio = 16.0f / 10.0f;
     float aperture = 0.0f;
     float focusDistance = 10.0f; // (from - at).length();
     float lensRadius;
     float iteration = 1.0;
+    glm::vec3 lastCheckedProperties{};
 };

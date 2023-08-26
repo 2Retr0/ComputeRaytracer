@@ -1116,6 +1116,7 @@ void VulkanEngine::draw() {
 
         // --- Writing Scene Data ---
         auto cameraParameters = camera.getProperties();
+        cameraParameters.seed = static_cast<float>(rand()) / 1000.0f; // NOLINT(cert-msc50-cpp)
 
         uint8_t *computeCameraData;
         VK_CHECK(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeCameraData));
@@ -1238,8 +1239,30 @@ void VulkanEngine::run() {
 
         // ImGui commands--we can call ImGui functions between `Imgui::NewFrame()` and `draw()`
         ImGui::Begin("VulkanTest2");
-        ImGui::Text("     FPS | %d", fps);
-        ImGui::Text("Position | (%.2f, %.2f, %.2f)", camera.from.x, camera.from.y, camera.from.z);
+
+        if (ImGui::BeginTable("Properties", 2)) {
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::Text("FPS");
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%d", fps);
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::Text("Position");
+            ImGui::TableSetColumnIndex(1); ImGui::Text("(%.2f, %.2f, %.2f)", camera.from.x, camera.from.y, camera.from.z);
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::Text("Frame");
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%d", int(camera.iteration));
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::Text("Field of View");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::SliderFloat("##", &camera.fovDegrees, 20.0f, 110.0f, "%.1f deg");
+
+            ImGui::EndTable();
+        }
+
         ImGui::End();
 
         draw();
@@ -1259,6 +1282,8 @@ void VulkanEngine::run() {
         }
 
         // --- Movement Calculations ---
-        camera.calculateMovement(ticksMs - startTicksMs);
+        if (!ImGui::IsWindowFocused(ImGuiHoveredFlags_AnyWindow))
+            camera.calculateMovement(ticksMs - startTicksMs);
+        camera.calculateProperties();
     }
 }
