@@ -1,8 +1,7 @@
 #include "vk_engine.h"
+#include "shapes.h"
 #include "vk_initializers.h"
 #include "vk_pipeline.h"
-#include "vk_textures.h"
-#include "sphere.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
@@ -10,8 +9,6 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 #include <vkBootstrap.h>
-#include <VkBootstrapDispatch.h>
-#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 #define VMA_IMPLEMENTATION
@@ -19,9 +16,6 @@
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
 #include <fstream>
-#include <functional>
-#include <iostream>
-#include <random>
 
 // We want to immediately abort when there is an error. In normal engines, this would give an error message to the
 // user, or perform a dump of state.
@@ -47,7 +41,7 @@ void VulkanEngine::init() {
         SDL_Init(SDL_INIT_VIDEO);
 
         auto windowFlags = (SDL_WindowFlags) (SDL_WINDOW_VULKAN);
-        auto windowTitle = std::string("VulkanTest2") + (useValidationLayers ? " (DEBUG)" : "");
+        auto windowTitle = std::string("VulkanTest2") + (useValidationLayers ? " (DEBUG)" : ""); // NOLINT
         // Create a blank SDL window for our application
         window = SDL_CreateWindow(
             windowTitle.c_str(),                   // Window title
@@ -354,7 +348,7 @@ void VulkanEngine::init_sync_structures() {
 vk::raii::ShaderModule VulkanEngine::load_shader_module(const char *path) const {
     // Open the file with cursor at the end. We use `std::ios::binary` to open the stream in binary and `std::ios::ate`
     // to open the stream at the end of the file.
-    std::ifstream file(path, std::ios::ate | std::ios::binary);
+    auto file = std::ifstream(path, std::ios::ate | std::ios::binary);
     if (!file.is_open()) throw std::runtime_error("Could not load shader module");
 
     // Find what the size of the file is by looking up the location of the cursor.
@@ -362,7 +356,7 @@ vk::raii::ShaderModule VulkanEngine::load_shader_module(const char *path) const 
     auto fileSize = static_cast<std::streamsize>(file.tellg());
 
     // SPIR-V expects the buffer to be a uint32_t, so make sure to reserve an int vector big enough for the entire file.
-    std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+    auto buffer = std::vector<uint32_t>(fileSize / sizeof(uint32_t));
 
     file.seekg(0);                               // Put file cursor at the beginning
     file.read((char *) buffer.data(), fileSize); // Load the entire file into the buffer
@@ -654,7 +648,6 @@ inline glm::vec3 rand(float min, float max) {
     return min + (max - min) * glm::vec3(random_double(), random_double(), random_double());
 }
 
-
 void VulkanEngine::init_scene() {
 //    // We create 1 monkey, add it as the first thing to the renderables array, and then we create a lot of triangles in
 //    // a grid, and put them around the monkey.
@@ -716,35 +709,36 @@ void VulkanEngine::init_scene() {
 //    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
 //    device.updateDescriptorSets({textureWrite2}, {});
 
-    spheres.push_back(GPUSphere({ 0, -2000, 0}, 2000.0, GPUMaterial({0.5, 0.5, 0.5}, 0.0, MAT_LAMBERTIAN)));
+    spheres.push_back(GPUSphere({ 0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN)));
 
     for (int a = -7; a < 7; a++) {
         for (int b = -7; b < 7; b++) {
             auto chooseMaterial = random_double();
             auto center = glm::vec3(a + 0.9 * random_double(), 0.2, b + 0.9 * random_double());
 
-            if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) {
+            if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
                 if (chooseMaterial < 0.8) { // diffuse
-                    auto albedo = rand(0.0, 1.0) * rand(0.0, 1.0);
-                    spheres.emplace_back(center, 0.2, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN));
+                    auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
+                    spheres.emplace_back(center, 0.2f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN));
                 } else if (chooseMaterial < 0.95) { // metal
                     auto albedo = rand(0.5, 1);
                     auto fuzz = rand(0, 0.5).x;
-                    spheres.emplace_back(center, 0.2, GPUMaterial(albedo, fuzz, MAT_METAL));
+                    spheres.emplace_back(center, 0.2f, GPUMaterial(albedo, fuzz, MAT_METAL));
                 } else { // glass
-                    spheres.emplace_back(center, 0.2, GPUMaterial({0, 0, 0}, 1.5, MAT_DIELECTRIC));
+                    spheres.emplace_back(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC));
                 }
             }
         }
     }
 
-    spheres.push_back(GPUSphere({-4,     1, 0},    1.0, GPUMaterial({0.4, 0.2, 0.1}, 0.0, MAT_LAMBERTIAN)));
+    spheres.push_back(GPUSphere({-4,     1, 0},    1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MAT_LAMBERTIAN)));
     // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
     // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
-    spheres.push_back(GPUSphere({ 0,     1, 0},    1.0, GPUMaterial({0.8, 0.8, 0.8}, 1.5, MAT_DIELECTRIC)));
-    spheres.push_back(GPUSphere({ 0,     1, 0},   -0.9, GPUMaterial({0.8, 0.8, 0.8}, 1.5, MAT_DIELECTRIC)));
-    spheres.push_back(GPUSphere({ 4,     1, 0},    1.0, GPUMaterial({0.7, 0.6, 0.5}, 0.0, MAT_METAL)));
+    spheres.push_back(GPUSphere({ 0,     1, 0},    1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC)));
+    spheres.push_back(GPUSphere({ 0,     1, 0},   -0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC)));
+    spheres.push_back(GPUSphere({ 4,     1, 0},    1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MAT_METAL)));
 
+    // BVH must be setup before writing buffers--and idk why!
     bvh = BVHNode(spheres, 0, static_cast<int>(spheres.size())).flatten();
 
     // --- Writing Object Storage Data ---
@@ -759,13 +753,6 @@ void VulkanEngine::init_scene() {
     }
     allocator->unmapMemory(computeObjectBuffer.allocation);
 
-
-    for (uint32_t i = 0; i < spheres.size(); i++) {
-        std::cout << i << " : ()\n";
-        auto v = spheres[i].center;
-        std::cout << "       -- (" << v.x << ", " << v.y << ", " << v.z << "), radius: " << spheres[i].center.w << "\n";
-    }
-
     // --- Writing BVH Storage Data ---
     void *bvhData;
     VK_CHECK(allocator->mapMemory(computeBvhBuffer.allocation, &bvhData));
@@ -778,8 +765,7 @@ void VulkanEngine::init_scene() {
         auto aabb = bvh[i].aabb;
         if (bvh[i].objectBufferIndex != 0xFFFFFFFF) {
             auto v = spheres[bvh[i].objectBufferIndex].center;
-            std::cout << "       -- (" << aabb.min.x << ", " << aabb.min.y << ", " << aabb.min.z << "), (" << aabb.max.x << ", " << aabb.max.y << ", " << aabb.max.z << ")\n";
-            std::cout << "       -- (" << v.x << ", " << v.y << ", " << v.z << "), radius: " << spheres[bvh[i].objectBufferIndex].center.w << "\n";
+            std::cout << "       -- center: (" << v.x << ", " << v.y << ", " << v.z << "), radius: " << spheres[bvh[i].objectBufferIndex].radius << "\n";
         }
         bvhSSBO[i] = bvh[i];
     }
@@ -806,7 +792,7 @@ void VulkanEngine::init_imgui() {
     auto poolInfo = vk::DescriptorPoolCreateInfo()
                         .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
                         .setMaxSets(1000)
-                        .setPoolSizeCount(std::size(poolSizes))
+                        .setPoolSizeCount(static_cast<uint32_t>(std::size(poolSizes)))
                         .setPPoolSizes(poolSizes);
 
     imguiPool = vk::raii::DescriptorPool(device, poolInfo);
@@ -875,7 +861,7 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
 //    auto framed = static_cast<float>(animationFrameNumber) / 30.f;
 //    auto frameIndex = frameNumber % FRAME_OVERLAP;
 //    sceneParameters.ambientColor = {sin(framed), 0, cos(framed), 1};
-//    sceneParameters.sunlightDirection = {sin(framed) * 3.0, 2.0, cos(framed) * 3.0, 0.1};
+//    sceneParameters.sunlightDirection = {sin(framed) * 3.0f, 2.0f, cos(framed) * 3.0f, 0.1};
 //
 //    uint8_t *sceneData;
 //    VK_CHECK(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData));
@@ -964,7 +950,7 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t size, vk::BufferUsageFlags bu
 
 void VulkanEngine::init_descriptors() {
     const auto SCENE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData));
-    const int MAX_OBJECTS = 10E3;
+    const int MAX_OBJECTS = (int) 10E3;
 
     // --- Descriptor Pool Setup ---
     // When creating a descriptor pool, you need to specify how many descriptors of each type you will need, and what’s
@@ -979,7 +965,7 @@ void VulkanEngine::init_descriptors() {
         {vk::DescriptorType::eStorageImage, 10},
     };
 
-    auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, sizes.size(), sizes.data());
+    auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, static_cast<uint32_t>(sizes.size()), sizes.data());
     descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolInfo);
 
     // --- Descriptor Set Layouts ---
@@ -1025,7 +1011,7 @@ void VulkanEngine::init_descriptors() {
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 2),
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 3),
         };
-        auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, computeBindings.size(), computeBindings.data());
+        auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, static_cast<uint32_t>(computeBindings.size()), computeBindings.data());
         computeSetLayout = vk::raii::DescriptorSetLayout(device, computeSetInfo);
 
         auto computeSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *computeSetLayout);
@@ -1062,7 +1048,7 @@ void VulkanEngine::init_descriptors() {
         std::vector<vk::DescriptorSetLayoutBinding> graphicsBindings = {
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 0),
         };
-        auto graphicsSetInfo = vk::DescriptorSetLayoutCreateInfo({}, graphicsBindings.size(), graphicsBindings.data());
+        auto graphicsSetInfo = vk::DescriptorSetLayoutCreateInfo({}, static_cast<uint32_t>(graphicsBindings.size()), graphicsBindings.data());
         graphicsSetLayout = vk::raii::DescriptorSetLayout(device, graphicsSetInfo);
 
         auto graphicsSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *graphicsSetLayout);
@@ -1147,7 +1133,7 @@ void VulkanEngine::immediate_submit(std::function<void(vk::CommandBuffer command
 
     // Submit command buffer to the queue and execute it. `uploadFence` will now block until the graphics commands finish.
     graphicsQueue.submit(submitInfo, *uploadContext.uploadFence);
-    VK_CHECK(device.waitForFences({*uploadContext.uploadFence}, true, 1E11));
+    VK_CHECK(device.waitForFences({*uploadContext.uploadFence}, true, (uint64_t) 1E11));
     device.resetFences({*uploadContext.uploadFence});
     // Reset the command buffers within the command pool.
     uploadContext.commandPool.reset({});
@@ -1177,13 +1163,13 @@ void VulkanEngine::draw() {
 
     // --- Setup ---
     // Wait until the GPU has finished rendering the last frame (timeout = 1s)
-    VK_CHECK(device.waitForFences({*currentFrame.renderFence}, true, 1E9));
+    VK_CHECK(device.waitForFences({*currentFrame.renderFence}, true, (uint64_t) 1E9));
     device.resetFences({*currentFrame.renderFence});
 
     // Request image from the swapchain (timeout = 1s). We use `presentSemaphore` to make sure that we can sync other
     // operations with the swapchain having an image ready to render.
     uint32_t swapchainImageIndex;
-    swapchainImageIndex = swapchain.acquireNextImage(1E9, *currentFrame.presentSemaphore, VK_NULL_HANDLE).second;
+    swapchainImageIndex = swapchain.acquireNextImage((uint64_t) 1E9, *currentFrame.presentSemaphore, VK_NULL_HANDLE).second;
 
     // Commands have finished execution at this point; we can safely reset the command buffer to begin enqueuing again.
     currentFrame.mainCommandBuffer.reset({});
@@ -1196,7 +1182,7 @@ void VulkanEngine::draw() {
 
     // --- Main Renderpass ---
     // Make a clear-color from frame number. This will flash with a 120*π frame period.
-    float flash = abs(sin(animationFrameNumber / 120.0f));
+    float flash = abs(sin(static_cast<float>(animationFrameNumber) / 120.0f));
     auto clearValue = vk::ClearValue().setColor(vk::ClearColorValue(0.0f, 0.0f, flash, 1.0f));
 
     vk::ClearValue depthClear;
@@ -1208,9 +1194,9 @@ void VulkanEngine::draw() {
         const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(CameraProperties)));
 
         // --- Writing Scene Data ---
-        camera.props.seed = static_cast<float>(rand()) / 1000.0f; // NOLINT(cert-msc50-cpp)
-        camera.props.sphereCount = spheres.size();
-        camera.props.bvhCount = bvh.size();
+        camera.props.seed = static_cast<float>(rand()) / 1E3f; // NOLINT(cert-msc50-cpp)
+        camera.props.sphereCount = static_cast<uint32_t>(spheres.size());
+        camera.props.bvhSize = static_cast<uint32_t>(bvh.size());
 
         uint8_t *computeCameraData;
         VK_CHECK(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeCameraData));
@@ -1352,9 +1338,16 @@ void VulkanEngine::run() {
             ImGui::TableSetColumnIndex(1); ImGui::Text("%d", iteration);
 
             ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::Separator();
+            ImGui::TableSetColumnIndex(1); ImGui::Separator();
+
+            ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Field of View");
-            ImGui::TableSetColumnIndex(1);
-            ImGui::SliderFloat("##", &camera.fovDegrees, 20.0f, 110.0f, "%.1f deg");
+            ImGui::TableSetColumnIndex(1); ImGui::SliderFloat("##fov", &camera.fovDegrees, 20.0f, 110.0f, "%.1f deg");
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::Text("Render AABB");
+            ImGui::TableSetColumnIndex(1); ImGui::Checkbox("##aabb", &camera.props.shouldRenderAABB);
 
             ImGui::EndTable();
         }
@@ -1379,7 +1372,7 @@ void VulkanEngine::run() {
 
         // --- Movement Calculations ---
         if (!ImGui::IsWindowFocused(ImGuiHoveredFlags_AnyWindow))
-            camera.calculateMovement(ticksMs - startTicksMs);
+            camera.calculateMovement(static_cast<float>(ticksMs - startTicksMs));
         camera.calculateProperties();
     }
 }

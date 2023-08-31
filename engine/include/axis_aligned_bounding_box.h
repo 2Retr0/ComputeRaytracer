@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sphere.h"
+#include "shapes.h"
 
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"

@@ -2,13 +2,11 @@
 
 #include "bounding_volume_hierarchy.h"
 #include "camera.h"
-#include "sphere.h"
+#include "shapes.h"
 #include "vk_mesh.h"
 #include "vk_types.h"
 
 #include <glm/glm.hpp>
-#include <glm/gtx/transform.hpp>
-#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 #include <deque>

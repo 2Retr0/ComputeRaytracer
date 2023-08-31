@@ -17,19 +17,21 @@ struct CameraProperties {
     float seed;
     glm::vec3 vertical;
     uint32_t sphereCount;
-    uint32_t bvhCount;
+    uint32_t bvhSize;
+    bool shouldRenderAABB;
 };
 
 class Camera {
 public:
     explicit Camera() {
         auto at = glm::vec3(0, 0, -0.25);
-        auto aperture = 0.0f;
+        auto aperture = 1.0f / 45.0f;
 
         props.position = glm::vec3(10, 1.5, 2);
         props.backward = glm::normalize(props.position - at);
         props.lensRadius = aperture * 0.5f;
         props.focusDistance = 10.0f;
+        props.shouldRenderAABB = false;
         calculateProperties();
     }
 
@@ -60,7 +62,7 @@ public:
     }
 
     void calculateProperties() {
-        auto newProperties = props.backward + props.position + fovDegrees;
+        auto newProperties = props.backward * (props.shouldRenderAABB ? 0.5f : 1.0f) + props.position * fovDegrees + props.focusDistance;
         if (lastCheckedProperties == newProperties) {
             props.iteration++;
             return;

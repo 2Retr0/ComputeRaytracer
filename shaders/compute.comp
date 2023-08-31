@@ -19,7 +19,7 @@ layout (binding = 0, rgba32f) uniform image2D outImage;
 struct Material {
     vec3 albedo;
     float fuzziness;
-    float type; // Cast to `uint` when used
+    uint type;
 };
 
 struct Sphere {
@@ -54,7 +54,8 @@ layout (binding = 1) uniform CameraParameters {
     float seed;
     vec3 vertical;
     uint sphereCount;
-    uint bvhCount;
+    uint bvhSize;
+    bool shouldRenderAABB;
 } camera;
 
 layout (std140, binding = 2) readonly buffer Spheres {
@@ -62,7 +63,7 @@ layout (std140, binding = 2) readonly buffer Spheres {
 };
 
 layout (std140, binding = 3) readonly buffer BoundingVolumeHierarchy {
-    BVHNode boxes[];
+    BVHNode bvh[];
 };
 
 
@@ -161,6 +162,8 @@ struct HitRecord {
     vec3 normal;
     Material material;
     float t;
+    float u;
+    float v;
     bool isFrontFace;
 };
 
@@ -230,7 +233,7 @@ bool hit_world(in Ray ray, in Interval t, out HitRecord record) {
 
     uint nextNodeIndex = 0; // Start at root of BVH
     while (nextNodeIndex != BAD_INDEX) {
-        node = boxes[nextNodeIndex];
+        node = bvh[nextNodeIndex];
 
         if (hit_aabb(ray, node.aabb, Interval(t.min, tClosest))) {
             uint index = node.objectBufferIndex;
@@ -260,7 +263,7 @@ bool hit_world(in Ray ray, in Interval t, out HitRecord record) {
 }
 
 bool scatter(in Ray ray, in HitRecord record, inout vec3 attenuation, inout Ray scattered) {
-    switch (uint(record.material.type)) {
+    switch (record.material.type) {
         case MAT_LAMBERTIAN:
             vec3 scatterDirection = record.normal + random_in_unit_sphere(hashSeed);
             // Catch degenerate scatter direction
@@ -268,6 +271,11 @@ bool scatter(in Ray ray, in HitRecord record, inout vec3 attenuation, inout Ray 
 
             scattered = Ray(record.position, normalize(scatterDirection));
             attenuation = record.material.albedo;
+
+            if (record.material.albedo == vec3(0.5)) {
+                ivec3 uvFlat = ivec3(floor((1 / 0.32) * record.position));
+                attenuation = ((uvFlat.x + uvFlat.y + uvFlat.z) % 2 == 0) ? vec3(0.2, 0.3, 0.1) : vec3(0.5);
+            }
 
             return true;
         case MAT_METAL:
@@ -336,12 +344,14 @@ void main() {
 
         passColor += ray_color(ray);
 
-        for (uint i = 0; i < camera.bvhCount; i++) {
-            AABB aabbSrc = boxes[i].aabb;
-            AABB aabbMod = AABB(aabbSrc.min + 0.005, -1, aabbSrc.max - 0.005);
-            if (hit_aabb(ray, boxes[i].aabb, Interval(0.001, INFINITY)) && !hit_aabb(ray, aabbMod, Interval(0.001, INFINITY))) {
-                passColor = vec3(1.0);
-                break;
+        if (camera.shouldRenderAABB) {
+            for (uint i = 0; i < camera.bvhSize; i++) {
+                AABB aabbSrc = bvh[i].aabb;
+                AABB aabbMod = AABB(aabbSrc.min + 0.005, -1, aabbSrc.max - 0.005);
+                if (hit_aabb(ray, bvh[i].aabb, Interval(0.001, INFINITY)) && !hit_aabb(ray, aabbMod, Interval(0.001, INFINITY))) {
+                    passColor = vec3(1.0);
+                    break;
+                }
             }
         }
     }

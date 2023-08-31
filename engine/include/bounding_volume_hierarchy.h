@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sphere.h"
+#include "shapes.h"
 
 #include <iostream>
 #include <random>
@@ -19,9 +19,9 @@ struct BVHNode {
     BVHNode(std::vector<GPUSphere> &spheres, int start, int end) {
         int axis = std::rand() % 3; // NOLINT
         auto objectSpan = end - start;
-        auto comparator = (axis == 0) ? box_x_compare
-                        : (axis == 1) ? box_y_compare
-                                      : box_z_compare;
+        auto comparator = [=](const auto &a, const auto &b) {
+            return (axis == 0) ? box_compare(a, b, 0) : (axis == 1) ? box_compare(a, b, 1) : box_compare(a, b, 2);
+        };
 
         switch (objectSpan) {
             case 1:
@@ -93,18 +93,6 @@ private:
 
     static bool box_compare(const GPUSphere &a, const GPUSphere &b, int axis) {
         return a.bounding_box().min[axis] < b.bounding_box().min[axis];
-    }
-
-    static bool box_x_compare(const GPUSphere &a, const GPUSphere &b) {
-        return box_compare(a, b, 0);
-    }
-
-    static bool box_y_compare(const GPUSphere &a, const GPUSphere &b) {
-        return box_compare(a, b, 1);
-    }
-
-    static bool box_z_compare(const GPUSphere &a, const GPUSphere &b) {
-        return box_compare(a, b, 2);
     }
 
 private:
