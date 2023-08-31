@@ -5,25 +5,31 @@
 #include <SDL.h>
 
 struct CameraProperties {
-    glm::vec4 from;
-    glm::vec4 at;
-    glm::vec4 up;
-    glm::vec4 cameraBackward;
-    glm::vec4 cameraRight;
-    glm::vec4 cameraUp;
-    glm::vec4 lowerLeftCorner;
-    glm::vec4 horizontal;
-    glm::vec4 vertical;
+    glm::vec3 position;
+    float pad;
+    glm::vec3 backward;
     float lensRadius;
+    glm::vec3 right;
+    float focusDistance;
+    glm::vec3 up;
     float iteration;
+    glm::vec3 horizontal;
     float seed;
+    glm::vec3 vertical;
+    uint32_t sphereCount;
+    uint32_t bvhCount;
 };
 
 class Camera {
 public:
     explicit Camera() {
-        lensRadius = aperture * 0.5f;
-        cameraBackward = glm::normalize(from - at);
+        auto at = glm::vec3(0, 0, -0.25);
+        auto aperture = 0.0f;
+
+        props.position = glm::vec3(10, 1.5, 2);
+        props.backward = glm::normalize(props.position - at);
+        props.lensRadius = aperture * 0.5f;
+        props.focusDistance = 10.0f;
         calculateProperties();
     }
 
@@ -32,12 +38,12 @@ public:
 
         // Handle continuously-held key input for movement.
         const uint8_t *keyStates = SDL_GetKeyboardState({});
-        from -= static_cast<float>(keyStates[SDL_SCANCODE_W]) * moveSensitivity * cameraBackward;
-        from -= static_cast<float>(keyStates[SDL_SCANCODE_A]) * moveSensitivity * cameraRight;
-        from += static_cast<float>(keyStates[SDL_SCANCODE_S]) * moveSensitivity * cameraBackward;
-        from += static_cast<float>(keyStates[SDL_SCANCODE_D]) * moveSensitivity * cameraRight;
-        from += static_cast<float>(keyStates[SDL_SCANCODE_SPACE]) * moveSensitivity * up;
-        from -= static_cast<float>(keyStates[SDL_SCANCODE_LSHIFT]) * moveSensitivity * up;
+        props.position -= static_cast<float>(keyStates[SDL_SCANCODE_W]) * moveSensitivity * props.backward;
+        props.position -= static_cast<float>(keyStates[SDL_SCANCODE_A]) * moveSensitivity * props.right;
+        props.position += static_cast<float>(keyStates[SDL_SCANCODE_S]) * moveSensitivity * props.backward;
+        props.position += static_cast<float>(keyStates[SDL_SCANCODE_D]) * moveSensitivity * props.right;
+        props.position += static_cast<float>(keyStates[SDL_SCANCODE_SPACE]) * moveSensitivity * props.up;
+        props.position -= static_cast<float>(keyStates[SDL_SCANCODE_LSHIFT]) * moveSensitivity * props.up;
 
         // Handle held mouse input for mouse movement->camera movement translation.
         if (SDL_GetMouseState(&mouseX, &mouseY) & SDL_BUTTON_LMASK) {
@@ -46,56 +52,43 @@ public:
             // Calculate rotation matrix
             float angleX = static_cast<float>(mouseX) * -mouseSensitivity;
             float angleY = static_cast<float>(mouseY) * -mouseSensitivity;
-            glm::mat3 rotate = glm::rotate(glm::mat4(1.0f), angleX, up) *
-                               glm::rotate(glm::mat4(1.0f), angleY, cameraRight);
+            glm::mat3 rotate = glm::rotate(glm::mat4(1.0f), angleX, glm::vec3(0, 1, 0)) *
+                               glm::rotate(glm::mat4(1.0f), angleY, props.right);
 
-            cameraBackward = rotate * cameraBackward;
+            props.backward = rotate * props.backward;
         }
     }
 
     void calculateProperties() {
+        auto newProperties = props.backward + props.position + fovDegrees;
+        if (lastCheckedProperties == newProperties) {
+            props.iteration++;
+            return;
+        }
+
         auto theta = glm::radians(fovDegrees);
-        viewportHeight = 2.0f * glm::tan(theta / 2.0f);
-        viewportWidth = aspectRatio * viewportHeight;
+        auto viewportHeight = 2.0f * glm::tan(theta / 2.0f);
+        auto viewportWidth = aspectRatio * viewportHeight;
+
+        lastCheckedProperties = newProperties;
 
         // Orthonormal basis to describe camera orientation.
-        // cameraBackward = glm::normalize(from - at);
-        cameraRight = glm::normalize(glm::cross(glm::vec3(up), glm::vec3(cameraBackward)));
-        cameraUp = glm::cross(glm::vec3(cameraBackward), glm::vec3(cameraRight));
+        props.right = glm::normalize(glm::cross(glm::vec3(0, 1, 0), props.backward));
+        props.up = glm::cross(props.backward, props.right);
 
-        horizontal = focusDistance * viewportWidth * cameraRight;
-        vertical = focusDistance * viewportHeight * cameraUp;
-        lowerLeftCorner = from - horizontal*0.5f - vertical*0.5f - focusDistance*cameraBackward;
+        props.horizontal = props.focusDistance * viewportWidth * props.right;
+        props.vertical = props.focusDistance * viewportHeight * props.up;
 
-        auto newProperties = cameraBackward + from + fovDegrees;
-        if (lastCheckedProperties != newProperties) {
-            iteration = 1;
-            lastCheckedProperties = newProperties;
-        } else {
-            iteration++;
-        }
-    }
-
-    [[nodiscard]] CameraProperties getProperties() const {
-        return {
-            glm::vec4(from, 0), glm::vec4(at, 0), glm::vec4(up, 0),
-            glm::vec4(cameraBackward, 0), glm::vec4(cameraRight, 0), glm::vec4(cameraUp, 0),
-            glm::vec4(lowerLeftCorner, 0), glm::vec4(horizontal, 0), glm::vec4(vertical, 0),
-            lensRadius, iteration,
-        };
+        props.iteration = 1;
     }
 
 public:
     const float mouseSensitivity = 0.005f; // Mouse sensitivity is static, move sensitivity is based on frame time!
-    int mouseX{}, mouseY{};
-    float viewportWidth, viewportHeight;
-    glm::vec3 from{10, 1.5, 2}, at{0, 0, -0.25}, up{0, 1, 0};
-    glm::vec3 cameraBackward{}, cameraRight{}, cameraUp{}, lowerLeftCorner{}, horizontal{}, vertical{};
+    CameraProperties props {};
     float fovDegrees = 30.0f;
-    float aspectRatio = 16.0f / 10.0f;
-    float aperture = 0.0f;
-    float focusDistance = 10.0f; // (from - at).length();
-    float lensRadius;
-    float iteration = 1.0;
+    float aspectRatio = 16.0f/10.0f;
+
+private:
+    int mouseX{}, mouseY{};
     glm::vec3 lastCheckedProperties{};
 };

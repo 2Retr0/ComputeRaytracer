@@ -2,6 +2,7 @@
 #include "vk_initializers.h"
 #include "vk_pipeline.h"
 #include "vk_textures.h"
+#include "sphere.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
@@ -20,6 +21,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <random>
 
 // We want to immediately abort when there is an error. In normal engines, this would give an error message to the
 // user, or perform a dump of state.
@@ -642,6 +644,17 @@ void VulkanEngine::upload_mesh(Mesh &mesh) {
 }
 
 
+inline double random_double() {
+    // Returns a random real in [0, 1).
+    return std::rand() / (RAND_MAX + 1.0); // NOLINT
+}
+
+inline glm::vec3 rand(float min, float max) {
+    // Returns a random real in [min, max).
+    return min + (max - min) * glm::vec3(random_double(), random_double(), random_double());
+}
+
+
 void VulkanEngine::init_scene() {
 //    // We create 1 monkey, add it as the first thing to the renderables array, and then we create a lot of triangles in
 //    // a grid, and put them around the monkey.
@@ -702,6 +715,75 @@ void VulkanEngine::init_scene() {
 //    imageBufferInfo.imageView = *loadedTextures["fumo_diffuse"].imageView;
 //    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
 //    device.updateDescriptorSets({textureWrite2}, {});
+
+    spheres.push_back(GPUSphere({ 0, -2000, 0}, 2000.0, GPUMaterial({0.5, 0.5, 0.5}, 0.0, MAT_LAMBERTIAN)));
+
+    for (int a = -7; a < 7; a++) {
+        for (int b = -7; b < 7; b++) {
+            auto chooseMaterial = random_double();
+            auto center = glm::vec3(a + 0.9 * random_double(), 0.2, b + 0.9 * random_double());
+
+            if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) {
+                if (chooseMaterial < 0.8) { // diffuse
+                    auto albedo = rand(0.0, 1.0) * rand(0.0, 1.0);
+                    spheres.emplace_back(center, 0.2, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN));
+                } else if (chooseMaterial < 0.95) { // metal
+                    auto albedo = rand(0.5, 1);
+                    auto fuzz = rand(0, 0.5).x;
+                    spheres.emplace_back(center, 0.2, GPUMaterial(albedo, fuzz, MAT_METAL));
+                } else { // glass
+                    spheres.emplace_back(center, 0.2, GPUMaterial({0, 0, 0}, 1.5, MAT_DIELECTRIC));
+                }
+            }
+        }
+    }
+
+    spheres.push_back(GPUSphere({-4,     1, 0},    1.0, GPUMaterial({0.4, 0.2, 0.1}, 0.0, MAT_LAMBERTIAN)));
+    // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
+    // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
+    spheres.push_back(GPUSphere({ 0,     1, 0},    1.0, GPUMaterial({0.8, 0.8, 0.8}, 1.5, MAT_DIELECTRIC)));
+    spheres.push_back(GPUSphere({ 0,     1, 0},   -0.9, GPUMaterial({0.8, 0.8, 0.8}, 1.5, MAT_DIELECTRIC)));
+    spheres.push_back(GPUSphere({ 4,     1, 0},    1.0, GPUMaterial({0.7, 0.6, 0.5}, 0.0, MAT_METAL)));
+
+    bvh = BVHNode(spheres, 0, static_cast<int>(spheres.size())).flatten();
+
+    // --- Writing Object Storage Data ---
+    void *objectData;
+    VK_CHECK(allocator->mapMemory(computeObjectBuffer.allocation, &objectData));
+
+    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
+    // normally.
+    auto *objectSSBO = reinterpret_cast<GPUSphere *>(objectData);
+    for (uint32_t i = 0; i < spheres.size(); i++) {
+        objectSSBO[i] = spheres[i];
+    }
+    allocator->unmapMemory(computeObjectBuffer.allocation);
+
+
+    for (uint32_t i = 0; i < spheres.size(); i++) {
+        std::cout << i << " : ()\n";
+        auto v = spheres[i].center;
+        std::cout << "       -- (" << v.x << ", " << v.y << ", " << v.z << "), radius: " << spheres[i].center.w << "\n";
+    }
+
+    // --- Writing BVH Storage Data ---
+    void *bvhData;
+    VK_CHECK(allocator->mapMemory(computeBvhBuffer.allocation, &bvhData));
+
+    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
+    // normally.
+    auto *bvhSSBO = reinterpret_cast<GPUBVHNode *>(bvhData);
+    for (uint32_t i = 0; i < bvh.size(); i++) {
+        std::cout << i << " : (objectBufferIndex: " << bvh[i].objectBufferIndex << ", hitIndex: " << bvh[i].hitIndex << ", missIndex: " << bvh[i].missIndex << ")\n";
+        auto aabb = bvh[i].aabb;
+        if (bvh[i].objectBufferIndex != 0xFFFFFFFF) {
+            auto v = spheres[bvh[i].objectBufferIndex].center;
+            std::cout << "       -- (" << aabb.min.x << ", " << aabb.min.y << ", " << aabb.min.z << "), (" << aabb.max.x << ", " << aabb.max.y << ", " << aabb.max.z << ")\n";
+            std::cout << "       -- (" << v.x << ", " << v.y << ", " << v.z << "), radius: " << spheres[bvh[i].objectBufferIndex].center.w << "\n";
+        }
+        bvhSSBO[i] = bvh[i];
+    }
+    allocator->unmapMemory(computeBvhBuffer.allocation);
 }
 
 
@@ -924,7 +1006,7 @@ void VulkanEngine::init_descriptors() {
         // Compute shader
         // clang-format on
         auto computeImageInfo = vkinit::image_create_info(
-            vk::Format::eR32G32B32A32Uint,
+            vk::Format::eR32G32B32A32Sfloat,
             vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
             vk::Extent3D(windowExtent.width, windowExtent.height, 1));
         computeImageInfo.initialLayout = vk::ImageLayout::eUndefined;
@@ -933,13 +1015,15 @@ void VulkanEngine::init_descriptors() {
                                               .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
         // clang-format on
         auto computeImage = static_cast<AllocatedImage>(allocator->createImage(computeImageInfo, computeImageAllocationInfo));
-        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR32G32B32A32Uint, computeImage.image, vk::ImageAspectFlagBits::eColor);
+        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR32G32B32A32Sfloat, computeImage.image, vk::ImageAspectFlagBits::eColor);
 
         computeTexture = Texture(computeImage, vk::raii::ImageView(device, computeViewInfo));
 
         std::vector<vk::DescriptorSetLayoutBinding> computeBindings = {
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 0),
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 1),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 0),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 1),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 2),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 3),
         };
         auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, computeBindings.size(), computeBindings.data());
         computeSetLayout = vk::raii::DescriptorSetLayout(device, computeSetInfo);
@@ -957,9 +1041,18 @@ void VulkanEngine::init_descriptors() {
         computeSampler = vk::raii::Sampler(device, samplerInfo);
         auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeSampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
 
+        // Compute objects
+        computeObjectBuffer = create_buffer(sizeof(GPUSphere) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
+        auto objectBufferInfo = vk::DescriptorBufferInfo(computeObjectBuffer.buffer, 0, sizeof(GPUSphere) * MAX_OBJECTS);
+
+        computeBvhBuffer = create_buffer(sizeof(GPUBVHNode) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
+        auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, sizeof(GPUBVHNode) * MAX_OBJECTS);
+
         std::vector<vk::WriteDescriptorSet> computeWrites = {
-            vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *computeDescriptor, &computeCameraBufferInfo, 0),
-            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeTextureBufferInfo, 1),
+            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeTextureBufferInfo, 0),
+            vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *computeDescriptor, &computeCameraBufferInfo, 1),
+            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &objectBufferInfo, 2),
+            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &bvhBufferInfo, 3),
         };
 
         device.updateDescriptorSets(computeWrites, {});
@@ -1115,8 +1208,9 @@ void VulkanEngine::draw() {
         const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(CameraProperties)));
 
         // --- Writing Scene Data ---
-        auto cameraParameters = camera.getProperties();
-        cameraParameters.seed = static_cast<float>(rand()) / 1000.0f; // NOLINT(cert-msc50-cpp)
+        camera.props.seed = static_cast<float>(rand()) / 1000.0f; // NOLINT(cert-msc50-cpp)
+        camera.props.sphereCount = spheres.size();
+        camera.props.bvhCount = bvh.size();
 
         uint8_t *computeCameraData;
         VK_CHECK(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeCameraData));
@@ -1125,7 +1219,7 @@ void VulkanEngine::draw() {
         auto frameIndex = frameNumber % FRAME_OVERLAP;
         auto uniformOffset = FRAME_OFFSET * frameIndex;
         computeCameraData += uniformOffset;
-        memcpy(computeCameraData, &cameraParameters, sizeof(CameraProperties));
+        memcpy(computeCameraData, &camera.props, sizeof(CameraProperties));
 
         allocator->unmapMemory(computeParameterBuffer.allocation);
 
@@ -1247,13 +1341,15 @@ void VulkanEngine::run() {
             ImGui::TableSetColumnIndex(0); ImGui::Text("FPS");
             ImGui::TableSetColumnIndex(1); ImGui::Text("%d", fps);
 
+            auto position = camera.props.position;
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Position");
-            ImGui::TableSetColumnIndex(1); ImGui::Text("(%.2f, %.2f, %.2f)", camera.from.x, camera.from.y, camera.from.z);
+            ImGui::TableSetColumnIndex(1); ImGui::Text("(%.2f, %.2f, %.2f)", position.x, position.y, position.z);
 
+            auto iteration = static_cast<int>(camera.props.iteration);
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Frame");
-            ImGui::TableSetColumnIndex(1); ImGui::Text("%d", int(camera.iteration));
+            ImGui::TableSetColumnIndex(1); ImGui::Text("%d", iteration);
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Field of View");
