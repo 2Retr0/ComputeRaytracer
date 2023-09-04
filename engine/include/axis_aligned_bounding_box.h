@@ -4,6 +4,8 @@
 
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
+#include "glm/gtc/epsilon.hpp"
+
 #include <cmath>
 #include <vector>
 
@@ -25,5 +27,25 @@ struct AABB {
     AABB(const AABB &a, const AABB &b) {
         min = glm::vec3(fmin(a.min.x, b.min.x), fmin(a.min.y, b.min.y), fmin(a.min.z, b.min.z));
         max = glm::vec3(fmax(a.max.x, b.max.x), fmax(a.max.y, b.max.y), fmax(a.max.z, b.max.z));
+    }
+
+    /**
+     * @return An AABB that has no side narrower than some delta, padding if necessary.
+     */
+    AABB pad() {
+        const float delta = 0.0001f;
+        auto diff = glm::epsilonEqual(max, min, 0.0001f);
+
+        if (diff.x) expand(0, delta);
+        if (diff.y) expand(1, delta);
+        if (diff.z) expand(2, delta);
+
+        return {min, max};
+    }
+
+private:
+    void expand(int axis, float delta) {
+        min[axis] -= delta / 2.0f;
+        max[axis] += delta / 2.0f;
     }
 };

@@ -12,6 +12,10 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #define VMA_IMPLEMENTATION
+// Source:
+// https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/issues/280#issuecomment-1453812255
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #include <vk_mem_alloc.h>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
 
@@ -19,13 +23,13 @@
 
 // We want to immediately abort when there is an error. In normal engines, this would give an error message to the
 // user, or perform a dump of state.
-#define VK_CHECK(x)                                                       \
-    do {                                                                  \
-        vk::Result error = x;                                             \
-        if (error != vk::Result::eSuccess) {                              \
-            std::cout << "Detected Vulkan error: " << error << std::endl; \
-            abort();                                                      \
-        }                                                                 \
+#define VK_CHECK(x)                                                              \
+    do {                                                                         \
+        vk::Result error = x;                                                    \
+        if (error != vk::Result::eSuccess) {                                     \
+            std::cerr << "ERROR: Detected Vulkan error: " << error << std::endl; \
+            abort();                                                             \
+        }                                                                        \
     } while (0)
 
 #ifdef NDEBUG
@@ -33,6 +37,16 @@ constexpr bool useValidationLayers = false;
 #else
 constexpr bool useValidationLayers = true;
 #endif
+
+inline double random_double() {
+    // Returns a random real in [0, 1).
+    return std::rand() / (RAND_MAX + 1.0); // NOLINT
+}
+
+inline glm::vec3 rand(float min, float max) {
+    // Returns a random real in [min, max).
+    return min + (max - min) * glm::vec3(random_double(), random_double(), random_double());
+}
 
 void VulkanEngine::init() {
     try {
@@ -51,6 +65,56 @@ void VulkanEngine::init() {
             static_cast<int>(windowExtent.height), // Window width  (px)
             windowFlags);
 
+        {
+            sceneManager.create_scene("book1", Camera({10, 1.5, 2}, {0, 0, -0.25}, 1.0f / 45.0f, 10.0f, 30.0f), []() -> std::shared_ptr<BVHNode> {
+                std::vector<std::shared_ptr<Hittable>> world;
+                for (int a = -7; a < 7; a++) {
+                    for (int b = -7; b < 7; b++) {
+                        auto chooseMaterial = random_double();
+                        auto center = glm::vec3(a + 0.9 * random_double(), 0.2, b + 0.9 * random_double());
+
+                        if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
+                            if (chooseMaterial < 0.8) { // diffuse
+                                auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
+                                world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN)));
+                            } else if (chooseMaterial < 0.95) { // metal
+                                auto albedo = rand(0.5, 1);
+                                auto fuzz = rand(0, 0.5).x;
+                                world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, fuzz, MAT_METAL)));
+                            } else { // glass
+                                world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC)));
+                            }
+                        }
+                    }
+                }
+
+                HittableList<Sphere> spheres;
+                spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN))));
+                spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MAT_LAMBERTIAN))));
+                // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
+                // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
+                spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0}, 1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
+                spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0},-0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
+                spheres.add(std::make_shared<Sphere>(Sphere({ 4, 1, 0}, 1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MAT_METAL))));
+//
+                world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
+
+                return std::make_shared<BVHNode>(world, 0, world.size());
+            });
+
+            sceneManager.create_scene("quads", Camera({0, 0, 9}, {0, 0, 0}, 1.0f / 45.0f, 10.0f, 80.0f), []() -> std::shared_ptr<BVHNode> {
+                std::vector<std::shared_ptr<Hittable>> world;
+
+                world.push_back(std::make_shared<Quad>(Quad({-3,-2, 5}, {0, 0,-4}, {0, 4, 0}, GPUMaterial({1.0, 0.2, 0.2}, 0.0f, MAT_LAMBERTIAN))));
+                world.push_back(std::make_shared<Quad>(Quad({-2,-2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial({0.2, 1.0, 0.2}, 0.0f, MAT_LAMBERTIAN))));
+                world.push_back(std::make_shared<Quad>(Quad({ 3,-2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial({0.2, 0.2, 1.0}, 0.0f, MAT_LAMBERTIAN))));
+                world.push_back(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial({1.0, 0.5, 0.0}, 0.0f, MAT_LAMBERTIAN))));
+                world.push_back(std::make_shared<Quad>(Quad({-2,-3, 5}, {4, 0, 0}, {0, 0,-4}, GPUMaterial({0.2, 0.8, 0.8}, 0.0f, MAT_LAMBERTIAN))));
+
+                return std::make_shared<BVHNode>(world, 0, world.size());
+            });
+        }
+
         init_vulkan();
         init_swapchain();
         init_commands();
@@ -64,13 +128,13 @@ void VulkanEngine::init() {
         init_scene();
         init_imgui();
     } catch (vk::SystemError &error) {
-        std::cout << "Detected Vulkan error: " << error.what() << std::endl;
+        std::cerr << "ERROR: Detected Vulkan error: " << error.what() << std::endl;
         abort();
     } catch (std::exception &error) {
-        std::cout << "Encountered std::exception: " << error.what() << std::endl;
+        std::cerr << "ERROR: Encountered std::exception: " << error.what() << std::endl;
         abort();
     } catch (...) {
-        std::cout << "Encountered unknown error\n";
+        std::cerr << "ERROR: Encountered unknown error\n";
         abort();
     }
 
@@ -132,11 +196,13 @@ void VulkanEngine::init_vulkan() {
     graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
 
+    auto vulkanFunctions = vma::VulkanFunctions(vkGetInstanceProcAddr, vkGetDeviceProcAddr);
     // --- Initialize Memory Allocator ---
     allocator = vma::createAllocatorUnique(vma::AllocatorCreateInfo()
         .setPhysicalDevice(*chosenGPU)
         .setDevice(*device)
-        .setInstance(*instance));
+        .setInstance(*instance)
+        .setPVulkanFunctions(&vulkanFunctions));
     // clang-format on
 
     // Allocating multiple things into the same buffer with descriptors pointing to each part is generally a good idea
@@ -145,7 +211,7 @@ void VulkanEngine::init_vulkan() {
     // GPUs often cannot read from an arbitrary address, and buffer offsets have to be aligned into a certain minimum
     // size. To know what is the minimum alignment size for buffers, we need to query it from the GPU.
     gpuProperties = vkbDevice.physical_device.properties;
-    std::cout << "Selected GPU has a minimum buffer alignment of "
+    std::cout << "INFO: Selected GPU has a minimum buffer alignment of "
               << gpuProperties.limits.minUniformBufferOffsetAlignment << std::endl;
 }
 
@@ -393,7 +459,7 @@ void VulkanEngine::init_pipelines() {
             std::cout << "ERROR: Could not load shader module " << shaderName << std::endl;
             continue;
         }
-        std::cout << "Successfully loaded shader module " + shaderName << std::endl;
+        std::cout << "INFO: Successfully loaded shader module " + shaderName << std::endl;
     }
 
 
@@ -594,59 +660,79 @@ void VulkanEngine::load_meshes() {
 
 void VulkanEngine::upload_mesh(Mesh &mesh) {
     const auto bufferSize = mesh.vertices.size() * sizeof(Vertex);
-
-    // --- CPU-side Buffer Allocation ---
-    // Create staging buffer to hold the mesh data before uploading to GPU buffer. Buffer will only be used as the
-    // source for transfer commands (no rendering) via `VK_BUFFER_USAGE_TRANSFER_SRC_BIT`.
-    auto stagingBufferInfo = vk::BufferCreateInfo({}, bufferSize, vk::BufferUsageFlagBits::eTransferSrc);
-    // Let VMA know that this data should be on CPU RAM.
-    auto vmaAllocInfo = vma::AllocationCreateInfo().setUsage(vma::MemoryUsage::eCpuOnly);
-
-    // Allocate the buffer.
-    auto stagingBuffer = static_cast<AllocatedBuffer>(allocator->createBuffer(stagingBufferInfo, vmaAllocInfo));
-
-    // To push data into a vk::Buffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
-    // done with writing the data, we can unmap. We copy the mesh vertex data into the buffer.
-    void *vertexData;
-    vertexData = allocator->mapMemory(stagingBuffer.allocation);
-    memcpy(vertexData, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
-    allocator->unmapMemory(stagingBuffer.allocation);
-
-    // --- GPU-side Buffer Allocation ---
-    // Allocate the vertex buffer--we signify that the buffer will be used as vertex buffer so that the driver knows
-    // we will use it to render meshes and to copy data into.
-    auto vertexBufferInfo = vk::BufferCreateInfo({}, bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst);
-
-    // Let the VMA library know that this data should be GPU native.
-    vmaAllocInfo.usage = vma::MemoryUsage::eGpuOnly;
-
-    // Allocate the buffer.
     mesh.vertexBuffer = create_buffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
 
-    // Execute the copy command, enqueuing a `vkCmdCopyBuffer()` command
-    immediate_submit([=, &mesh](vk::CommandBuffer commandBuffer) {
-        auto copy = vk::BufferCopy(0, 0, bufferSize);
-        commandBuffer.copyBuffer(stagingBuffer.buffer, mesh.vertexBuffer.buffer, {copy});
-    });
+    upload_buffer(mesh.vertexBuffer, mesh.vertices);
 
     // --- Cleanup ---
     // Add the destruction of the triangle mesh buffer to the deletion queue
     mainDeletionQueue.push([=, this]() {
         allocator->destroyBuffer(mesh.vertexBuffer.buffer, mesh.vertexBuffer.allocation);
     });
+//    allocator->destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation); // Delete immediately.
+}
+
+
+template<typename T>
+void VulkanEngine::upload_buffer(AllocatedBuffer &buffer, std::vector<T> &objects) {
+    const auto bufferSize = sizeof(T) * objects.size();
+
+    if (bufferSize == 0) return;
+
+    // --- CPU-side Buffer Allocation ---
+    // Create staging buffer to hold the data before uploading to GPU buffer. Buffer will only be used as the
+    // source for transfer commands (no rendering) via the flag `vk::BufferUsageFlagBits::eTransferSrc`.
+    auto stagingBuffer = create_buffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vma::MemoryUsage::eCpuOnly);
+
+    // To push data into a vk::Buffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
+    // done with writing the data, we can unmap.
+    T *objectSSBO;
+    VK_CHECK(allocator->mapMemory(stagingBuffer.allocation, (void **) &objectSSBO));
+    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
+    // normally.
+    for (uint32_t i = 0; i < objects.size(); i++)
+        objectSSBO[i] = objects[i];
+    allocator->unmapMemory(stagingBuffer.allocation);
+
+    // --- Copy Staging Buffer to GPU ---
+    // Execute the copy command, enqueuing a `vk::CommandBuffer::copyBuffer()` command
+    immediate_submit([&](vk::CommandBuffer commandBuffer) {
+        commandBuffer.copyBuffer(stagingBuffer.buffer, buffer.buffer, vk::BufferCopy(0, 0, bufferSize));
+    });
+
     allocator->destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation); // Delete immediately.
 }
 
 
-inline double random_double() {
-    // Returns a random real in [0, 1).
-    return std::rand() / (RAND_MAX + 1.0); // NOLINT
+void VulkanEngine::swap_scene(const std::string &sceneName) {
+    currentScene = sceneManager.scenes[sceneName];
+
+//    for (uint32_t i = 0; i < currentScene.bvh.size(); i++) {
+//        auto node = currentScene.bvh[i];
+//        auto bufferIndex = node.objectBufferIndex;
+//        std::cout << i << " : (objectBufferIndex: " << bufferIndex << ", hitIndex: " << node.hitIndex << ", missIndex: " << node.missIndex << ", numChildren: " << node.numChildren << ")\n";
+//        if (bufferIndex != BAD_INDEX) {
+//            if (node.type == TYPE_SPHERE) {
+//                std::cout << "       -- spheres\n";
+//                for (uint32_t j = bufferIndex; j < bufferIndex + node.numChildren; j++) {
+//                    auto v = currentScene.spheres[j];
+//                    std::cout << "       -- center: (" << v.center.x << ", " << v.center.y << ", " << v.center.z << "), radius: " << v.radius << "\n";
+//                    std::cout << "           -- aabb: (" << node.aabb.min.x << ", " << node.aabb.min.y << ", " << node.aabb.min.z << "), (" << node.aabb.max.x << ", " << node.aabb.max.y << ", " << node.aabb.max.z << ")\n";
+//                }
+//            }
+//        }
+//    }
+
+    camera = currentScene.camera;
+    upload_buffer(sphereObjectBuffer, currentScene.spheres);
+    upload_buffer(quadObjectBuffer, currentScene.quads);
+    upload_buffer(computeBvhBuffer, currentScene.bvh);
+
+    sceneParameters.sphereCount = static_cast<uint32_t>(currentScene.spheres.size());
+    sceneParameters.quadCount = static_cast<uint32_t>(currentScene.quads.size());
+    sceneParameters.bvhSize = static_cast<uint32_t>(currentScene.bvh.size());
 }
 
-inline glm::vec3 rand(float min, float max) {
-    // Returns a random real in [min, max).
-    return min + (max - min) * glm::vec3(random_double(), random_double(), random_double());
-}
 
 void VulkanEngine::init_scene() {
 //    // We create 1 monkey, add it as the first thing to the renderables array, and then we create a lot of triangles in
@@ -709,67 +795,13 @@ void VulkanEngine::init_scene() {
 //    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *texturedMaterial2->textureSet, &imageBufferInfo, 0);
 //    device.updateDescriptorSets({textureWrite2}, {});
 
-    spheres.push_back(GPUSphere({ 0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN)));
-
-    for (int a = -7; a < 7; a++) {
-        for (int b = -7; b < 7; b++) {
-            auto chooseMaterial = random_double();
-            auto center = glm::vec3(a + 0.9 * random_double(), 0.2, b + 0.9 * random_double());
-
-            if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
-                if (chooseMaterial < 0.8) { // diffuse
-                    auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
-                    spheres.emplace_back(center, 0.2f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN));
-                } else if (chooseMaterial < 0.95) { // metal
-                    auto albedo = rand(0.5, 1);
-                    auto fuzz = rand(0, 0.5).x;
-                    spheres.emplace_back(center, 0.2f, GPUMaterial(albedo, fuzz, MAT_METAL));
-                } else { // glass
-                    spheres.emplace_back(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC));
-                }
-            }
-        }
-    }
-
-    spheres.push_back(GPUSphere({-4,     1, 0},    1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MAT_LAMBERTIAN)));
-    // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
-    // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
-    spheres.push_back(GPUSphere({ 0,     1, 0},    1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC)));
-    spheres.push_back(GPUSphere({ 0,     1, 0},   -0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC)));
-    spheres.push_back(GPUSphere({ 4,     1, 0},    1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MAT_METAL)));
-
-    // BVH must be setup before writing buffers--and idk why!
-    bvh = BVHNode(spheres, 0, static_cast<int>(spheres.size())).flatten();
+    // --- Writing BVH Storage Data ---
+//    upload_buffer(computeBvhBuffer, bvh);
 
     // --- Writing Object Storage Data ---
-    void *objectData;
-    VK_CHECK(allocator->mapMemory(computeObjectBuffer.allocation, &objectData));
-
-    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
-    // normally.
-    auto *objectSSBO = reinterpret_cast<GPUSphere *>(objectData);
-    for (uint32_t i = 0; i < spheres.size(); i++) {
-        objectSSBO[i] = spheres[i];
-    }
-    allocator->unmapMemory(computeObjectBuffer.allocation);
-
-    // --- Writing BVH Storage Data ---
-    void *bvhData;
-    VK_CHECK(allocator->mapMemory(computeBvhBuffer.allocation, &bvhData));
-
-    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
-    // normally.
-    auto *bvhSSBO = reinterpret_cast<GPUBVHNode *>(bvhData);
-    for (uint32_t i = 0; i < bvh.size(); i++) {
-        std::cout << i << " : (objectBufferIndex: " << bvh[i].objectBufferIndex << ", hitIndex: " << bvh[i].hitIndex << ", missIndex: " << bvh[i].missIndex << ")\n";
-        auto aabb = bvh[i].aabb;
-        if (bvh[i].objectBufferIndex != 0xFFFFFFFF) {
-            auto v = spheres[bvh[i].objectBufferIndex].center;
-            std::cout << "       -- center: (" << v.x << ", " << v.y << ", " << v.z << "), radius: " << spheres[bvh[i].objectBufferIndex].radius << "\n";
-        }
-        bvhSSBO[i] = bvh[i];
-    }
-    allocator->unmapMemory(computeBvhBuffer.allocation);
+//    upload_buffer(sphereObjectBuffer, spheres);
+//    upload_buffer(quadObjectBuffer, quads);
+    swap_scene("book1");
 }
 
 
@@ -931,6 +963,7 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
 //    }
 }
 
+
 FrameData &VulkanEngine::get_current_frame() {
     // With a frame overlap of 2 (default), it means that even frames will use `frames[0]`, while odd frames will use `frames[1]`.
     // While the GPU is busy executing the rendering commands from frame 0, the CPU will be writing the buffers of frame 1, and reverse.
@@ -949,7 +982,7 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t size, vk::BufferUsageFlags bu
 
 
 void VulkanEngine::init_descriptors() {
-    const auto SCENE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData));
+    const auto SCENE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
     const int MAX_OBJECTS = (int) 10E3;
 
     // --- Descriptor Pool Setup ---
@@ -1010,6 +1043,7 @@ void VulkanEngine::init_descriptors() {
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 1),
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 2),
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 3),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 4),
         };
         auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, static_cast<uint32_t>(computeBindings.size()), computeBindings.data());
         computeSetLayout = vk::raii::DescriptorSetLayout(device, computeSetInfo);
@@ -1018,27 +1052,34 @@ void VulkanEngine::init_descriptors() {
         computeDescriptor = std::move(device.allocateDescriptorSets(computeSetAllocInfo).front());
 
         // Compute camera
-        const auto COMPUTE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(CameraProperties));
-        computeParameterBuffer = create_buffer(COMPUTE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
-        auto computeCameraBufferInfo = vk::DescriptorBufferInfo(computeParameterBuffer.buffer, 0, sizeof(CameraProperties));
+        computeParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
+        auto computeCameraBufferInfo = vk::DescriptorBufferInfo(computeParameterBuffer.buffer, 0, sizeof(GPUSceneData));
 
         // Compute texture
-        auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eNearest);
+        auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
         computeSampler = vk::raii::Sampler(device, samplerInfo);
         auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeSampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
 
-        // Compute objects
-        computeObjectBuffer = create_buffer(sizeof(GPUSphere) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
-        auto objectBufferInfo = vk::DescriptorBufferInfo(computeObjectBuffer.buffer, 0, sizeof(GPUSphere) * MAX_OBJECTS);
+        // Compute BVH
+        auto bvhSize = sizeof(GPUBVHNode) * sceneManager.bvhBufferSize;
+        computeBvhBuffer = create_buffer(bvhSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, bvhSize);
 
-        computeBvhBuffer = create_buffer(sizeof(GPUBVHNode) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
-        auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, sizeof(GPUBVHNode) * MAX_OBJECTS);
+        // Compute objects
+        auto sphereBufferSize = sizeof(GPUSphere) * sceneManager.sphereBufferSize;
+        sphereObjectBuffer = create_buffer(sphereBufferSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto sphereBufferInfo = vk::DescriptorBufferInfo(sphereObjectBuffer.buffer, 0, sphereBufferSize);
+
+        auto quadBufferSize = sizeof(GPUQuad) * sceneManager.quadBufferSize;
+        quadObjectBuffer = create_buffer(quadBufferSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto quadBufferInfo = vk::DescriptorBufferInfo(quadObjectBuffer.buffer, 0, quadBufferSize);
 
         std::vector<vk::WriteDescriptorSet> computeWrites = {
             vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeTextureBufferInfo, 0),
             vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *computeDescriptor, &computeCameraBufferInfo, 1),
-            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &objectBufferInfo, 2),
-            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &bvhBufferInfo, 3),
+            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &bvhBufferInfo, 2),
+            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &sphereBufferInfo, 3),
+            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &quadBufferInfo, 4),
         };
 
         device.updateDescriptorSets(computeWrites, {});
@@ -1104,7 +1145,7 @@ void VulkanEngine::init_descriptors() {
 }
 
 
-size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) const {
+size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) const { // NOLINT
     // Calculate the required alignment based on minimum device-offset alignment
     size_t minOffsetAlignment = gpuProperties.limits.minUniformBufferOffsetAlignment;
     size_t alignedSize = originalSize;
@@ -1191,21 +1232,21 @@ void VulkanEngine::draw() {
     vk::ClearValue clearValues[] = {clearValue, depthClear};
 
     {
-        const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(CameraProperties)));
+        const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(GPUSceneData)));
 
         // --- Writing Scene Data ---
-        camera.props.seed = static_cast<float>(rand()) / 1E3f; // NOLINT(cert-msc50-cpp)
-        camera.props.sphereCount = static_cast<uint32_t>(spheres.size());
-        camera.props.bvhSize = static_cast<uint32_t>(bvh.size());
+        camera.props.seed = static_cast<float>(rand()) / 1E3f; // NOLINT
+        sceneParameters.camera = camera.props; // Update camera for scene parameters.
 
-        uint8_t *computeCameraData;
-        VK_CHECK(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeCameraData));
+
+        uint8_t *computeSceneData;
+        VK_CHECK(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeSceneData));
 
         // Write camera parameter data
         auto frameIndex = frameNumber % FRAME_OVERLAP;
         auto uniformOffset = FRAME_OFFSET * frameIndex;
-        computeCameraData += uniformOffset;
-        memcpy(computeCameraData, &camera.props, sizeof(CameraProperties));
+        computeSceneData += uniformOffset;
+        memcpy(computeSceneData, &sceneParameters, sizeof(GPUSceneData));
 
         allocator->unmapMemory(computeParameterBuffer.allocation);
 
@@ -1216,7 +1257,7 @@ void VulkanEngine::draw() {
         commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, {imageMemoryBarrier});
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computeMaterial->pipeline);
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, *computeDescriptor, uniformOffset);
-        commandBuffer.dispatch(windowExtent.width / 16, windowExtent.height / 16, 1);
+        commandBuffer.dispatch(windowExtent.width / 8, windowExtent.height / 8, 1);
 
         imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         imageMemoryBarrier.dstAccessMask = {};
@@ -1312,6 +1353,7 @@ void VulkanEngine::run() {
 
         // --- Draw ---
         auto startTicksMs = ticksMs;
+
         // ImGui new frame
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL2_NewFrame(window);
@@ -1350,6 +1392,17 @@ void VulkanEngine::run() {
             ImGui::TableSetColumnIndex(1); ImGui::Checkbox("##aabb", &camera.props.shouldRenderAABB);
 
             ImGui::EndTable();
+        }
+
+//        ImGui::TableNextRow();
+//        ImGui::TableSetColumnIndex(0); ImGui::Text("Scene");
+//        ImGui::TableSetColumnIndex(1);
+        std::vector<const char *> sceneNames;
+        std::transform(sceneManager.scenes.begin(), sceneManager.scenes.end(), std::back_inserter(sceneNames), [](const auto& pair) { return pair.first.c_str(); });
+        static int sceneNameIndex = 0;
+        if (ImGui::Combo("Scene Select", &sceneNameIndex, sceneNames.data(), static_cast<int>(sceneNames.size()))) {
+            swap_scene(sceneNames[sceneNameIndex]);
+            std::cout << "INFO: Swapped scene to " << sceneNames[sceneNameIndex] << std::endl;
         }
 
         ImGui::End();

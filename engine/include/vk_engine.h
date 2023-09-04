@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include "bounding_volume_hierarchy.h"
-#include "camera.h"
+#include "scene.h"
 #include "shapes.h"
 #include "vk_mesh.h"
 #include "vk_types.h"
@@ -59,20 +59,20 @@ struct RenderObject {
 };
 
 
-struct GPUCameraData {
-    glm::mat4 view;           // Camera position
-    glm::mat4 projection;     // Perspective transform
-    glm::mat4 viewProjection; // View and proj matrices multiplied together (to avoid multiplying in shader).
-};
-
-
-struct GPUSceneData {
-    glm::vec4 fogColor;          // w=exponent
-    glm::vec4 fogDistances;      // x=min; y=max; z,w=unused.
-    glm::vec4 ambientColor;
-    glm::vec4 sunlightDirection; // w=power
-    glm::vec4 sunlightColor;
-};
+//struct GPUCameraData {
+//    glm::mat4 view;           // Camera position
+//    glm::mat4 projection;     // Perspective transform
+//    glm::mat4 viewProjection; // View and proj matrices multiplied together (to avoid multiplying in shader).
+//};
+//
+//
+//struct GPUSceneData {
+//    glm::vec4 fogColor;          // w=exponent
+//    glm::vec4 fogDistances;      // x=min; y=max; z,w=unused.
+//    glm::vec4 ambientColor;
+//    glm::vec4 sunlightDirection; // w=power
+//    glm::vec4 sunlightColor;
+//};
 
 
 struct GPUObjectData {
@@ -210,11 +210,12 @@ public:
     Texture computeTexture;
     vk::raii::Sampler computeSampler = nullptr;
     AllocatedBuffer computeParameterBuffer;
-    AllocatedBuffer computeObjectBuffer;
     AllocatedBuffer computeBvhBuffer;
-    std::vector<GPUSphere> spheres;
-    std::vector<GPUBVHNode> bvh;
+    AllocatedBuffer sphereObjectBuffer;
+    AllocatedBuffer quadObjectBuffer;
     Camera camera;
+    SceneManager sceneManager;
+    Scene currentScene;
 
 private:
     void init_vulkan();
@@ -247,12 +248,17 @@ private:
 
     void upload_mesh(Mesh &mesh);
 
+    template <typename T>
+    void upload_buffer(AllocatedBuffer &buffer, std::vector<T> &objects);
+
+    void swap_scene(const std::string &sceneName);
+
     void draw_objects(const vk::raii::CommandBuffer &commandBuffer, RenderObject *first, uint32_t count);
 
     /** Creates a material and adds it to a map. */
     void create_material(vk::raii::Pipeline pipeline, vk::raii::PipelineLayout layout, const std::string &name);
 
-    size_t pad_uniform_buffer_size(size_t originalSize) const;
+    [[nodiscard]] size_t pad_uniform_buffer_size(size_t originalSize) const;
 
     /** Returns `nullptr` if the material cannot be found. */
     Material *get_material(const std::string &name);

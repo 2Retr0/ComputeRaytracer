@@ -9,6 +9,7 @@ struct AllocatedBuffer {
     vma::Allocation allocation;
 
     AllocatedBuffer() = default;
+
     explicit AllocatedBuffer(std::pair<vk::Buffer, vma::Allocation> buffer) : buffer(buffer.first), allocation(buffer.second) {}
 };
 
