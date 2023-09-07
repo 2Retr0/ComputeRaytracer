@@ -87,7 +87,7 @@ bool Mesh::load_mesh_from_asset(const char *path) {
 //        }
 //    }
 
-    std::cout << "Successfully loaded mesh file " << path
-              << " : vert=" << vertices.size() << ", tri=" << indices.size() / 3 << std::endl;
+    std::cout << "INFO: Loaded mesh file \"" << path
+              << "\" : (vert=" << vertices.size() << ", tri=" << indices.size() / 3 << ')' << std::endl;
     return true;
 }

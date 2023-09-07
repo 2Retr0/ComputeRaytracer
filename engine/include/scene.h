@@ -12,6 +12,12 @@
 #include <functional>
 #include <vector>
 
+#define TYPE_SPHERE 0
+#define TYPE_QUAD   1
+#define TYPE_TRI    2
+
+#define DEFAULT_BACKGROUND (glm::vec3(-1.0))
+
 struct GPUCameraData {
     glm::vec3 position;
     bool shouldRenderAABB;
@@ -101,46 +107,38 @@ private:
 };
 
 struct GPUSceneData {
-    uint32_t sphereCount;
-    uint32_t quadCount;
-    uint32_t bvhSize;
+    glm::vec3 backgroundColor;
     float pad;
     GPUCameraData camera;
 };
 
 struct Scene {
+    std::string name;
     Camera camera;
+    glm::vec3 backgroundColor;
     std::vector<GPUSphere> spheres;
     std::vector<GPUQuad> quads;
+    std::vector<GPUTri> tris;
     std::vector<GPUBVHNode> bvh;
 };
 
 class SceneManager {
 public:
-    //    void add(const std::string &sceneName, Camera camera, const std::function<void(std::vector<GPUSphere> &, std::vector<GPUQuad> &, std::vector<GPUBVHNode> &)> &sceneConstructor) {
-    //        auto scene = Scene(camera);
-    //        sceneConstructor(scene.spheres, scene.quads, scene.bvh);
-    //
-    //        sphereBufferSize = std::max(sphereBufferSize, scene.spheres.size());
-    //        quadBufferSize = std::max(quadBufferSize, scene.quads.size());
-    //        bvhBufferSize = std::max(bvhBufferSize, scene.bvh.size());
-    //        scenes[sceneName] = scene;
-    //    }
-
-    void create_scene(const std::string &sceneName, Camera camera, const std::function<std::shared_ptr<BVHNode>()> &&worldGenerator) {
-        auto scene = Scene(camera);
+    void create_scene(const std::string &sceneName, Camera camera, glm::vec3 backgroundColor, const std::function<std::shared_ptr<BVHNode>()> &&worldGenerator) {
+        auto scene = Scene(sceneName, camera, backgroundColor);
 
         create_scene(scene, worldGenerator().get(), BAD_INDEX, 0);
 
         sphereBufferSize = std::max(sphereBufferSize, scene.spheres.size());
         quadBufferSize = std::max(quadBufferSize, scene.quads.size());
+        triBufferSize = std::max(triBufferSize, scene.tris.size());
         bvhBufferSize = std::max(bvhBufferSize, scene.bvh.size());
         scenes[sceneName] = scene;
     }
 
 public:
     std::unordered_map<std::string, Scene> scenes;
-    size_t sphereBufferSize {0}, quadBufferSize {0}, bvhBufferSize {0};
+    size_t sphereBufferSize {0}, quadBufferSize {0}, triBufferSize {0}, bvhBufferSize {0};
 
 private:
     static void create_scene(Scene &scene, Hittable *root, uint32_t nextRightNodeIndex, int nodeIndex) { // NOLINT
@@ -152,9 +150,11 @@ private:
             auto gpuNode = GPUBVHNode();
             auto sphereList = dynamic_cast<HittableList<Sphere> *>(root);
             auto quadList = dynamic_cast<HittableList<Quad> *>(root);
+            auto triList = dynamic_cast<HittableList<Tri> *>(root);
 
             auto sphere = dynamic_cast<Sphere *>(root);
             auto quad = dynamic_cast<Quad *>(root);
+            auto tri = dynamic_cast<Tri *>(root);
 
             if (sphereList != nullptr) {
                 gpuNode.aabb = sphereList->bounding_box();
@@ -174,6 +174,22 @@ private:
                 for (const auto &object : quadList->objects) {
                     scene.quads.push_back(*object);
                 }
+            } else if (triList != nullptr) {
+                gpuNode.aabb = triList->bounding_box();
+                gpuNode.objectBufferIndex = static_cast<uint32_t>(scene.quads.size());
+                gpuNode.type = TYPE_TRI;
+                gpuNode.numChildren = static_cast<uint32_t>(triList->objects.size());
+
+                for (const auto &object : triList->objects) {
+                    scene.tris.push_back(*object);
+                }
+            } else if (tri != nullptr) {
+                gpuNode.aabb = tri->bounding_box();
+                gpuNode.objectBufferIndex = static_cast<uint32_t>(scene.tris.size());
+                gpuNode.type = TYPE_TRI;
+                gpuNode.numChildren = 1;
+
+                scene.tris.push_back(*tri);
             } else if (sphere != nullptr) {
                 gpuNode.aabb = sphere->bounding_box();
                 gpuNode.objectBufferIndex = static_cast<uint32_t>(scene.spheres.size());

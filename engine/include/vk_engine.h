@@ -213,6 +213,7 @@ public:
     AllocatedBuffer computeBvhBuffer;
     AllocatedBuffer sphereObjectBuffer;
     AllocatedBuffer quadObjectBuffer;
+    AllocatedBuffer triObjectBuffer;
     Camera camera;
     SceneManager sceneManager;
     Scene currentScene;

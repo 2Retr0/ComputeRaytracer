@@ -2,6 +2,7 @@
 #include "shapes.h"
 #include "vk_initializers.h"
 #include "vk_pipeline.h"
+#include "vk_textures.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
@@ -65,56 +66,6 @@ void VulkanEngine::init() {
             static_cast<int>(windowExtent.height), // Window width  (px)
             windowFlags);
 
-        {
-            sceneManager.create_scene("book1", Camera({10, 1.5, 2}, {0, 0, -0.25}, 1.0f / 45.0f, 10.0f, 30.0f), []() -> std::shared_ptr<BVHNode> {
-                std::vector<std::shared_ptr<Hittable>> world;
-                for (int a = -7; a < 7; a++) {
-                    for (int b = -7; b < 7; b++) {
-                        auto chooseMaterial = random_double();
-                        auto center = glm::vec3(a + 0.9 * random_double(), 0.2, b + 0.9 * random_double());
-
-                        if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
-                            if (chooseMaterial < 0.8) { // diffuse
-                                auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
-                                world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN)));
-                            } else if (chooseMaterial < 0.95) { // metal
-                                auto albedo = rand(0.5, 1);
-                                auto fuzz = rand(0, 0.5).x;
-                                world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, fuzz, MAT_METAL)));
-                            } else { // glass
-                                world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC)));
-                            }
-                        }
-                    }
-                }
-
-                HittableList<Sphere> spheres;
-                spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN))));
-                spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MAT_LAMBERTIAN))));
-                // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
-                // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
-                spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0}, 1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
-                spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0},-0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
-                spheres.add(std::make_shared<Sphere>(Sphere({ 4, 1, 0}, 1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MAT_METAL))));
-//
-                world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
-
-                return std::make_shared<BVHNode>(world, 0, world.size());
-            });
-
-            sceneManager.create_scene("quads", Camera({0, 0, 9}, {0, 0, 0}, 1.0f / 45.0f, 10.0f, 80.0f), []() -> std::shared_ptr<BVHNode> {
-                std::vector<std::shared_ptr<Hittable>> world;
-
-                world.push_back(std::make_shared<Quad>(Quad({-3,-2, 5}, {0, 0,-4}, {0, 4, 0}, GPUMaterial({1.0, 0.2, 0.2}, 0.0f, MAT_LAMBERTIAN))));
-                world.push_back(std::make_shared<Quad>(Quad({-2,-2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial({0.2, 1.0, 0.2}, 0.0f, MAT_LAMBERTIAN))));
-                world.push_back(std::make_shared<Quad>(Quad({ 3,-2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial({0.2, 0.2, 1.0}, 0.0f, MAT_LAMBERTIAN))));
-                world.push_back(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial({1.0, 0.5, 0.0}, 0.0f, MAT_LAMBERTIAN))));
-                world.push_back(std::make_shared<Quad>(Quad({-2,-3, 5}, {4, 0, 0}, {0, 0,-4}, GPUMaterial({0.2, 0.8, 0.8}, 0.0f, MAT_LAMBERTIAN))));
-
-                return std::make_shared<BVHNode>(world, 0, world.size());
-            });
-        }
-
         init_vulkan();
         init_swapchain();
         init_commands();
@@ -127,7 +78,7 @@ void VulkanEngine::init() {
         load_meshes();
         init_scene();
         init_imgui();
-    } catch (vk::SystemError &error) {
+    } catch (vk::Error &error) {
         std::cerr << "ERROR: Detected Vulkan error: " << error.what() << std::endl;
         abort();
     } catch (std::exception &error) {
@@ -213,6 +164,8 @@ void VulkanEngine::init_vulkan() {
     gpuProperties = vkbDevice.physical_device.properties;
     std::cout << "INFO: Selected GPU has a minimum buffer alignment of "
               << gpuProperties.limits.minUniformBufferOffsetAlignment << std::endl;
+    std::cout << "INFO: Selected GPU has a maximum storage buffer size of "
+              << gpuProperties.limits.maxStorageBufferRange << std::endl;
 }
 
 
@@ -448,7 +401,8 @@ void VulkanEngine::init_pipelines() {
     std::string shaderNames[] = {
         "compute.comp",
         "compute.vert",
-        "compute.frag"
+        "compute.frag",
+        "compute2.comp",
     };
 
     for (const auto &shaderName : shaderNames) {
@@ -456,10 +410,10 @@ void VulkanEngine::init_pipelines() {
         try {
             shaderModules[shaderName] = std::make_unique<vk::raii::ShaderModule>(load_shader_module(filepath.c_str()));
         } catch (...) {
-            std::cout << "ERROR: Could not load shader module " << shaderName << std::endl;
+            std::cout << "ERROR: Could not load shader module \"" << shaderName << '"' << std::endl;
             continue;
         }
-        std::cout << "INFO: Successfully loaded shader module " + shaderName << std::endl;
+        std::cout << "INFO: Loaded shader module \"" + shaderName << "'" << std::endl;
     }
 
 
@@ -576,6 +530,7 @@ void VulkanEngine::init_pipelines() {
     // --- Compute Pipeline ---
     pipelineBuilder.shaderStages.clear(); // Clear the shader stages for the builder
     pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eCompute, **shaderModules["compute.comp"]));
+//    pipelineBuilder.shaderStages.push_back(vkinit::pipeline_shader_stage_create_info(vk::ShaderStageFlagBits::eCompute, **shaderModules["compute2.comp"]));
 
     pipelineBuilder.pipelineLayout = *computePipelineLayout;
 
@@ -620,15 +575,19 @@ void VulkanEngine::load_images() {
 //    auto lostEmpire = Texture(lostEmpireImage, vk::raii::ImageView(device, imageviewInfo));
 //    loadedTextures["empire_diffuse"] = Texture(std::move(lostEmpire));
 //
-//    auto fumoImage = vkutil::load_image_from_asset(*this, "../assets/cirno_low_u1_v1.tx");
-//    auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, fumoImage.image, vk::ImageAspectFlagBits::eColor);
-//    auto fumo = Texture(fumoImage, vk::raii::ImageView(device, fumoImageviewInfo));
-//    loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
+    auto fumoImage = vkutil::load_image_from_asset(*this, "../assets/cirno_low_u1_v1.tx");
+    auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, fumoImage.image, vk::ImageAspectFlagBits::eColor);
+    auto fumo = Texture(fumoImage, vk::raii::ImageView(device, fumoImageviewInfo));
+    loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
+
+    auto earthImage = vkutil::load_image_from_asset(*this, "../assets/earthmap.tx");
+    auto earthImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, earthImage.image, vk::ImageAspectFlagBits::eColor);
+    loadedTextures["earth"] = Texture(earthImage, vk::raii::ImageView(device, earthImageviewInfo));
 }
 
 
 void VulkanEngine::load_meshes() {
-//    Mesh triangleMesh, monkeyMesh, fumoMesh, lostEmpireMesh;
+    Mesh triangleMesh, monkeyMesh, fumoMesh, lostEmpireMesh;
 //    triangleMesh.vertices.resize(3);
 //
 //    triangleMesh.vertices[0].position = {1.f, 1.f, 0.f};
@@ -640,7 +599,7 @@ void VulkanEngine::load_meshes() {
 //    triangleMesh.vertices[2].color = {0.f, 1.f, 0.f};
 //
 //    monkeyMesh.load_mesh_from_asset("../assets/monkey_smooth.mesh");
-//    fumoMesh.load_mesh_from_asset("../assets/cirno_low.mesh");
+    fumoMesh.load_mesh_from_asset("../assets/cirno_low.mesh");
 //    lostEmpireMesh.load_mesh_from_asset("../assets/lost_empire.mesh");
 //
 //    // We need to make sure both meshes are sent to the GPU. We don't care about vertex normals.
@@ -653,7 +612,7 @@ void VulkanEngine::load_meshes() {
 //    //       no problem now.
 //    meshes["triangle"] = Mesh(std::move(triangleMesh));
 //    meshes["monkey"] = Mesh(std::move(monkeyMesh));
-//    meshes["fumo"] = Mesh(std::move(fumoMesh));
+    meshes["fumo"] = Mesh(std::move(fumoMesh));
 //    meshes["empire"] = Mesh(std::move(lostEmpireMesh));
 }
 
@@ -722,15 +681,35 @@ void VulkanEngine::swap_scene(const std::string &sceneName) {
 //            }
 //        }
 //    }
+    // Compute BVH
+    auto bvhSize = sizeof(GPUBVHNode) * currentScene.bvh.size();
+    auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, bvhSize);
+
+    // Compute objects
+    auto sphereBufferSize = sizeof(GPUSphere) * currentScene.spheres.size();
+    auto sphereBufferInfo = vk::DescriptorBufferInfo(sphereObjectBuffer.buffer, 0, sphereBufferSize);
+
+    auto quadBufferSize = sizeof(GPUQuad) * currentScene.quads.size();
+    auto quadBufferInfo = vk::DescriptorBufferInfo(quadObjectBuffer.buffer, 0, quadBufferSize);
+
+    auto triBufferSize = sizeof(GPUTri) * currentScene.tris.size();
+    auto triBufferInfo = vk::DescriptorBufferInfo(triObjectBuffer.buffer, 0, triBufferSize);
+
+    // clang-format off
+    device.updateDescriptorSets({
+        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &bvhBufferInfo, 2),
+        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &sphereBufferInfo, 3),
+        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &quadBufferInfo, 4),
+        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &triBufferInfo, 6),
+    }, {});
+    // clang-format on
 
     camera = currentScene.camera;
     upload_buffer(sphereObjectBuffer, currentScene.spheres);
     upload_buffer(quadObjectBuffer, currentScene.quads);
+    upload_buffer(triObjectBuffer, currentScene.tris);
     upload_buffer(computeBvhBuffer, currentScene.bvh);
-
-    sceneParameters.sphereCount = static_cast<uint32_t>(currentScene.spheres.size());
-    sceneParameters.quadCount = static_cast<uint32_t>(currentScene.quads.size());
-    sceneParameters.bvhSize = static_cast<uint32_t>(currentScene.bvh.size());
+    sceneParameters.backgroundColor = currentScene.backgroundColor;
 }
 
 
@@ -801,7 +780,134 @@ void VulkanEngine::init_scene() {
     // --- Writing Object Storage Data ---
 //    upload_buffer(sphereObjectBuffer, spheres);
 //    upload_buffer(quadObjectBuffer, quads);
-    swap_scene("book1");
+
+    auto fumoImageInfo = vk::DescriptorImageInfo(*computeSampler, *loadedTextures["fumo_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
+    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *computeDescriptor, &fumoImageInfo, 5);
+    device.updateDescriptorSets({textureWrite2}, {});
+
+//    auto earthImageInfo = vk::DescriptorImageInfo(*computeSampler, *loadedTextures["earth"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
+//    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *computeDescriptor, &earthImageInfo, 5);
+//    device.updateDescriptorSets({textureWrite2}, {});
+
+    sceneManager.create_scene("book1", Camera({10, 1.5, 2}, {0, 0, -0.25}, 1.0f / 45.0f, 10.0f, 30.0f), DEFAULT_BACKGROUND, []() -> std::shared_ptr<BVHNode> {
+        std::vector<std::shared_ptr<Hittable>> world;
+        for (int a = -7; a < 7; a++) {
+            for (int b = -7; b < 7; b++) {
+                auto chooseMaterial = random_double();
+                auto center = glm::vec3(a + 0.9 * random_double(), 0.2, b + 0.9 * random_double());
+
+                if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
+                    if (chooseMaterial < 0.8) { // diffuse
+                        auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN)));
+                    } else if (chooseMaterial < 0.95) { // metal
+                        auto albedo = rand(0.5, 1);
+                        auto fuzz = rand(0, 0.5).x;
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, fuzz, MAT_METAL)));
+                    } else { // glass
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC)));
+                    }
+                }
+            }
+        }
+
+        HittableList<Sphere> spheres;
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MAT_LAMBERTIAN))));
+        // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
+        // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
+        spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0}, 1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
+        spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0},-0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
+        spheres.add(std::make_shared<Sphere>(Sphere({ 4, 1, 0}, 1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MAT_METAL))));
+        //
+        world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
+
+        return std::make_shared<BVHNode>(world, 0, world.size());
+    });
+
+    sceneManager.create_scene("quads", Camera({0, 0, 9}, {0, 0, 0}, 1.0f / 45.0f, 10.0f, 80.0f), DEFAULT_BACKGROUND, []() -> std::shared_ptr<BVHNode> {
+        std::vector<std::shared_ptr<Hittable>> world;
+
+        world.push_back(std::make_shared<Quad>(Quad({-3,-2, 5}, {0, 0,-4}, {0, 4, 0}, GPUMaterial({1.0, 0.2, 0.2}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({-2,-2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial({0.2, 1.0, 0.2}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({ 3,-2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial({0.2, 0.2, 1.0}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial({1.0, 0.5, 0.0}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({-2,-3, 5}, {4, 0, 0}, {0, 0,-4}, GPUMaterial({0.2, 0.8, 0.8}, 0.0f, MAT_LAMBERTIAN))));
+
+        return std::make_shared<BVHNode>(world, 0, world.size());
+    });
+
+    sceneManager.create_scene("corne", Camera({1, 1, -2.878}, {1, 1, 0}, 0.0f, 10.0f, 40.0f), glm::vec3(0.0), []() -> std::shared_ptr<BVHNode> {
+        std::vector<std::shared_ptr<Hittable>> world;
+
+        world.push_back(std::make_shared<Quad>(Quad({2, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.12, 0.45, 0.15}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.65, 0.05, 0.05}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({1.234, 1.993, 1.194}, {-0.468, 0, 0}, {0, 0, -0.378}, GPUMaterial({15, 15, 15}, 0.0f, MAT_DIFFUSE_LIGHT))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {2, 0, 0}, {0, 0, 2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({2, 2, 2}, {-2, 0, 0}, {0, 0, -2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 2}, {2, 0, 0}, {0, 2, 0}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MAT_LAMBERTIAN))));
+
+        return std::make_shared<BVHNode>(world, 0, world.size());
+    });
+
+    sceneManager.create_scene("cirno", Camera({0, 2, 5}, {0, 1, 0}, 0.0f, 10.0f, 80.0f), DEFAULT_BACKGROUND, [&]() -> std::shared_ptr<BVHNode> {
+        std::vector<std::shared_ptr<Hittable>> world;
+
+        auto *fumoMesh = &meshes["fumo"];
+        glm::vec3 modelCenter;
+        for (const auto &vertex : fumoMesh->vertices) {
+            modelCenter += vertex.position;
+        }
+        modelCenter /= fumoMesh->vertices.size();
+        std::cout << "INFO: cirno center: (" << modelCenter.x << ", " << modelCenter.y << ", " << modelCenter.z << ')' << std::endl;
+
+        auto &vertices = fumoMesh->vertices;
+        auto &indices = fumoMesh->indices;
+
+        for (int i = 0; i < fumoMesh->indices.size() - 2; i += 3) {
+            auto v0 = vertices[indices[i]];
+            auto v1 = vertices[indices[i + 1]];
+            auto v2 = vertices[indices[i + 2]];
+            auto u = glm::vec3(v0.uv[0], v1.uv[0], v2.uv[0]);
+            auto v = glm::vec3(v0.uv[1], v1.uv[1], v2.uv[1]);
+
+            world.push_back(std::make_shared<Tri>(
+                Tri(v0.position - glm::vec3(0, 0.08, 0), v1.position - glm::vec3(0, 0.08, 0), v2.position - glm::vec3(0, 0.08, 0), u, v, {{0, 1, 1}, 0.0, MAT_LAMBERTIAN})));
+        }
+
+        for (int a = -7; a < 7; a++) {
+            for (int b = -7; b < 7; b++) {
+                if (a == 0 || b == 0) continue;
+
+                auto chooseMaterial = random_double();
+                auto center = glm::vec3(2.5 * a + 0.9 * random_double(), 0.4, 2.5 * b + 0.9 * random_double());
+
+                if ((center - glm::vec3(4, 0.4, 0)).length() > 0.9) { // NOLINT
+                    if (chooseMaterial < 0.8) { // diffuse
+                        auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
+                        world.push_back(std::make_shared<Sphere>(center, 0.4f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN)));
+                    } else if (chooseMaterial < 0.95) { // metal
+                        auto albedo = rand(0.5, 1);
+                        auto fuzz = rand(0, 0.5).x;
+                        world.push_back(std::make_shared<Sphere>(center, 0.4f, GPUMaterial(albedo, fuzz, MAT_METAL)));
+                    } else { // glass
+                        world.push_back(std::make_shared<Sphere>(center, 0.4f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC)));
+                    }
+                }
+            }
+        }
+
+        HittableList<Sphere> spheres;
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MAT_METAL))));
+        spheres.add(std::make_shared<Sphere>(Sphere({4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MAT_METAL))));
+
+        world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
+
+        return std::make_shared<BVHNode>(world, 0, world.size());
+    });
+
+    swap_scene("cirno");
 }
 
 
@@ -1044,6 +1150,8 @@ void VulkanEngine::init_descriptors() {
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 2),
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 3),
             vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 4),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute, 5),
+            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 6),
         };
         auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, static_cast<uint32_t>(computeBindings.size()), computeBindings.data());
         computeSetLayout = vk::raii::DescriptorSetLayout(device, computeSetInfo);
@@ -1060,26 +1168,14 @@ void VulkanEngine::init_descriptors() {
         computeSampler = vk::raii::Sampler(device, samplerInfo);
         auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeSampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
 
-        // Compute BVH
-        auto bvhSize = sizeof(GPUBVHNode) * sceneManager.bvhBufferSize;
-        computeBvhBuffer = create_buffer(bvhSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, bvhSize);
-
-        // Compute objects
-        auto sphereBufferSize = sizeof(GPUSphere) * sceneManager.sphereBufferSize;
-        sphereObjectBuffer = create_buffer(sphereBufferSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        auto sphereBufferInfo = vk::DescriptorBufferInfo(sphereObjectBuffer.buffer, 0, sphereBufferSize);
-
-        auto quadBufferSize = sizeof(GPUQuad) * sceneManager.quadBufferSize;
-        quadObjectBuffer = create_buffer(quadBufferSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        auto quadBufferInfo = vk::DescriptorBufferInfo(quadObjectBuffer.buffer, 0, quadBufferSize);
+        computeBvhBuffer = create_buffer(sizeof(GPUBVHNode) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        sphereObjectBuffer = create_buffer(sizeof(GPUSphere) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        quadObjectBuffer = create_buffer(sizeof(GPUQuad) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        triObjectBuffer = create_buffer(sizeof(GPUTri) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
 
         std::vector<vk::WriteDescriptorSet> computeWrites = {
             vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeTextureBufferInfo, 0),
             vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *computeDescriptor, &computeCameraBufferInfo, 1),
-            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &bvhBufferInfo, 2),
-            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &sphereBufferInfo, 3),
-            vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &quadBufferInfo, 4),
         };
 
         device.updateDescriptorSets(computeWrites, {});
@@ -1204,7 +1300,7 @@ void VulkanEngine::draw() {
 
     // --- Setup ---
     // Wait until the GPU has finished rendering the last frame (timeout = 1s)
-    VK_CHECK(device.waitForFences({*currentFrame.renderFence}, true, (uint64_t) 1E9));
+    VK_CHECK(device.waitForFences({*currentFrame.renderFence}, true, (uint64_t) 5E9));
     device.resetFences({*currentFrame.renderFence});
 
     // Request image from the swapchain (timeout = 1s). We use `presentSemaphore` to make sure that we can sync other
@@ -1385,24 +1481,33 @@ void VulkanEngine::run() {
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Field of View");
-            ImGui::TableSetColumnIndex(1); ImGui::SliderFloat("##fov", &camera.fovDegrees, 20.0f, 110.0f, "%.1f deg");
+            ImGui::TableSetColumnIndex(1); ImGui::SliderFloat("##fov", &camera.fovDegrees, 20.0f, 160.0f, "%.1f deg");
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Render AABB");
             ImGui::TableSetColumnIndex(1); ImGui::Checkbox("##aabb", &camera.props.shouldRenderAABB);
 
-            ImGui::EndTable();
-        }
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::Text("Scene");
+            ImGui::TableSetColumnIndex(1);
+            if (ImGui::BeginCombo("##scene", currentScene.name.c_str())) {
+                std::string oldName = currentScene.name;
+                std::string newName = currentScene.name;
+                for (const auto &[name, scene] : sceneManager.scenes) {
+                    if (ImGui::Selectable(name.c_str(), oldName == name)) {
+                        ImGui::SetItemDefaultFocus();
+                        newName = name;
+                    }
+                }
 
-//        ImGui::TableNextRow();
-//        ImGui::TableSetColumnIndex(0); ImGui::Text("Scene");
-//        ImGui::TableSetColumnIndex(1);
-        std::vector<const char *> sceneNames;
-        std::transform(sceneManager.scenes.begin(), sceneManager.scenes.end(), std::back_inserter(sceneNames), [](const auto& pair) { return pair.first.c_str(); });
-        static int sceneNameIndex = 0;
-        if (ImGui::Combo("Scene Select", &sceneNameIndex, sceneNames.data(), static_cast<int>(sceneNames.size()))) {
-            swap_scene(sceneNames[sceneNameIndex]);
-            std::cout << "INFO: Swapped scene to " << sceneNames[sceneNameIndex] << std::endl;
+                if (oldName != newName) {
+                    swap_scene(newName);
+                    std::cout << "INFO: Swapped scene to \"" << newName << '"' << std::endl;
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::EndTable();
         }
 
         ImGui::End();

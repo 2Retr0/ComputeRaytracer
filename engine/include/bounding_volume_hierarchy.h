@@ -6,8 +6,6 @@
 #include <random>
 
 #define BAD_INDEX 0xFFFFFFFF
-#define TYPE_SPHERE 1
-#define TYPE_QUAD 2
 
 struct GPUBVHNode {
     AABB aabb;
