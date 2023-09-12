@@ -2,9 +2,7 @@
 set(CMAKE_CXX_STANDARD 20)
 
 file(GLOB ENGINE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-add_executable(${CMAKE_PROJECT_NAME} ${ENGINE_FILES}
-        include/vk_descriptors.h
-        src/vk_descriptors.cpp)
+add_executable(${CMAKE_PROJECT_NAME} ${ENGINE_FILES})
 
 set_property(TARGET ${CMAKE_PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:VulkanTest2>")
 

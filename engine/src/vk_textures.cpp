@@ -36,7 +36,7 @@ AllocatedImage vkutil::load_image_from_file(VulkanEngine &engine, const std::str
 
     engine.allocator->destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation);
 
-    std::cout << "INFO: Loaded texture file \"" << path << '"' << std::endl;
+    std::cout << "   --- Loaded texture file \"" << path << '"' << std::endl;
     return outImage;
 }
 
@@ -73,7 +73,7 @@ AllocatedImage vkutil::load_image_from_asset(VulkanEngine &engine, const std::st
 
     engine.allocator->destroyBuffer(stagingBuffer.buffer, stagingBuffer.allocation);
 
-    std::cout << "INFO: Loaded texture file \"" << path << '"' << std::endl;
+    std::cout << "   --- Loaded texture file \"" << path << '"' << std::endl;
     return outImage;
 }
 

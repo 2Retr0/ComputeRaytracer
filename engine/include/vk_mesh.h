@@ -31,10 +31,13 @@ struct RenderBounds {
 struct Mesh {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
-
     AllocatedBuffer vertexBuffer;
-
     RenderBounds bounds;
 
-    bool load_mesh_from_asset(const char *path);
+//    bool load_mesh_from_asset(const char *path);
 };
+
+class VulkanEngine;
+namespace vkutil {
+    Mesh load_mesh_from_asset(const std::string &path);
+} // namespace vkutil

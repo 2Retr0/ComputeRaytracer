@@ -3,14 +3,14 @@
 #define PI       3.14159265359
 #define INFINITY 3.402823466e+38
 
-#define MAT_LAMBERTIAN    0
-#define MAT_METAL         1
-#define MAT_DIELECTRIC    2
-#define MAT_DIFFUSE_LIGHT 3
+#define MAT_LAMBERTIAN    1
+#define MAT_METAL         2
+#define MAT_DIELECTRIC    4
+#define MAT_DIFFUSE_LIGHT 8
 
-#define TYPE_SPHERE 0
-#define TYPE_QUAD   1
-#define TYPE_TRI    2
+#define TYPE_SPHERE 1
+#define TYPE_QUAD   2
+#define TYPE_TRI    4
 
 #define NUM_SAMPLES 1
 #define MAX_BOUNCES 10
@@ -21,8 +21,6 @@
 layout (local_size_x = 8, local_size_y = 8) in;
 
 layout (binding = 0, rgba32f) uniform image2D outImage;
-
-layout (location = 0) out vec4 outColor;
 
 struct Material {
     vec3 albedo;

@@ -29,8 +29,8 @@ namespace assets {
     };
 
     struct MeshInfo {
-        uint64_t vertexBufferSize;
-        uint64_t indexBufferSize;
+        size_t vertexBufferSize;
+        size_t indexBufferSize;
         MeshBounds bounds;
         VertexFormat vertexFormat;
         char indexSize;

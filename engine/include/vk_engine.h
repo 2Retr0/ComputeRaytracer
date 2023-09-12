@@ -1,8 +1,9 @@
 ﻿#pragma once
 
-#include "bounding_volume_hierarchy.h"
-#include "scene.h"
-#include "shapes.h"
+#include "../raytracing/bounding_volume_hierarchy.h"
+#include "../raytracing/primitives.h"
+#include "../raytracing/scene.h"
+#include "vk_descriptors.h"
 #include "vk_mesh.h"
 #include "vk_types.h"
 
@@ -75,9 +76,9 @@ struct RenderObject {
 //};
 
 
-struct GPUObjectData {
-    glm::mat4 modelMatrix;
-};
+//struct GPUObjectData {
+//    glm::mat4 modelMatrix;
+//};
 
 
 /** Includes rendering-related structures to control object lifetimes easier (e.g., double buffering). */
@@ -111,6 +112,7 @@ struct UploadContext {
 
 struct Texture {
     AllocatedImage image;
+    vk::raii::Sampler sampler = nullptr;
     vk::raii::ImageView imageView = nullptr;
 };
 
@@ -174,6 +176,8 @@ public:
     DeletionQueue mainDeletionQueue;
     vma::UniqueAllocator allocator;
     UploadContext uploadContext;
+    vkutil::DescriptorLayoutCache layoutCache;
+    vkutil::DescriptorAllocator descriptorAllocator;
 
     // --- Scene Management ---
     std::vector<RenderObject> renderables;
@@ -181,11 +185,6 @@ public:
     std::unordered_map<std::string, Mesh> meshes;
     GPUSceneData sceneParameters;
     AllocatedBuffer sceneParameterBuffer;
-
-    // --- Camera ---
-    glm::vec3 cameraPos = glm::vec3(13, 2, 3);
-    glm::vec3 up = glm::vec3(0, 1, 0);
-    glm::vec3 forward = glm::vec3(0, 0, -1);
 
     // --- Double Buffering ---
     FrameData frames[FRAME_OVERLAP];
@@ -203,20 +202,21 @@ public:
     vk::raii::Sampler blockySampler = nullptr;
 
     // --- Compute ---
-    vk::raii::DescriptorSetLayout computeSetLayout = nullptr;
-    vk::raii::DescriptorSet computeDescriptor = nullptr;
-    vk::raii::DescriptorSetLayout graphicsSetLayout = nullptr;
-    vk::raii::DescriptorSet graphicsDescriptor = nullptr;
     Texture computeTexture;
-    vk::raii::Sampler computeSampler = nullptr;
+//    vk::raii::Sampler computeSampler = nullptr;
     AllocatedBuffer computeParameterBuffer;
     AllocatedBuffer computeBvhBuffer;
     AllocatedBuffer sphereObjectBuffer;
     AllocatedBuffer quadObjectBuffer;
     AllocatedBuffer triObjectBuffer;
-    Camera camera;
+//    Camera camera;
     SceneManager sceneManager;
     Scene currentScene;
+    std::unordered_map<std::string, std::unique_ptr<vkutil::Descriptor>> descriptors;
+    std::unordered_map<std::string, std::unique_ptr<vk::raii::ShaderModule>> shaderModules;
+    bool shouldRecreateSwapchain {false};
+    vk::Viewport viewport;
+    vk::Rect2D scissor;
 
 private:
     void init_vulkan();
@@ -230,6 +230,8 @@ private:
     void init_framebuffers();
 
     void init_sync_structures();
+
+    void init_shaders();
 
     void init_pipelines();
 
@@ -249,7 +251,7 @@ private:
 
     void upload_mesh(Mesh &mesh);
 
-    template <typename T>
+    template<typename T, typename U=T>
     void upload_buffer(AllocatedBuffer &buffer, std::vector<T> &objects);
 
     void swap_scene(const std::string &sceneName);
@@ -268,4 +270,6 @@ private:
     Mesh *get_mesh(const std::string &name);
 
     FrameData &get_current_frame();
+
+    void recreate_swapchain();
 };

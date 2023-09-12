@@ -1,4 +1,4 @@
-#include "vk_pipeline.h"
+#include "vk_material.h"
 
 vk::raii::Pipeline PipelineBuilder::build_graphics_pipeline(const vk::raii::Device &device, const vk::raii::RenderPass &renderpass) {
     // Let’s begin by connecting the viewport and scissor into `ViewportState`, and setting the
@@ -11,7 +11,10 @@ vk::raii::Pipeline PipelineBuilder::build_graphics_pipeline(const vk::raii::Devi
     // but we do write to the color attachment.
     auto colorBlending = vk::PipelineColorBlendStateCreateInfo({}, false, vk::LogicOp::eCopy, 1, &colorBlendAttachment);
 
-    // Build the actual pipeline. We will use all the info structs we have been writing into this one for creation.
+    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    auto dynamicState = vk::PipelineDynamicStateCreateInfo({}, dynamicStates);
+
+        // Build the actual pipeline. We will use all the info structs we have been writing into this one for creation.
     // clang-format off
     auto pipelineInfo = vk::GraphicsPipelineCreateInfo()
         .setStageCount(shaderStages.size())
@@ -26,7 +29,8 @@ vk::raii::Pipeline PipelineBuilder::build_graphics_pipeline(const vk::raii::Devi
         .setLayout(pipelineLayout)
         .setRenderPass(*renderpass)
         .setSubpass(0)
-        .setBasePipelineHandle(nullptr);
+        .setBasePipelineHandle(nullptr)
+        .setPDynamicState(&dynamicState);
     // clang-format on
 
     // It's easy to error when creating the graphics pipeline, so we handle it better than just using VK_CHECK.

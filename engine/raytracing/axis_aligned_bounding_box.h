@@ -1,6 +1,6 @@
 #pragma once
 
-#include "shapes.h"
+#include "primitives.h"
 
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"

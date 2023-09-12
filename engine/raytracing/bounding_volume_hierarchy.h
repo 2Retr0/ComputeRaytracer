@@ -1,32 +1,33 @@
 #pragma once
 
-#include "shapes.h"
+#include "primitives.h"
 
 #include <iostream>
 #include <random>
 
 #define BAD_INDEX 0xFFFFFFFF
 
-struct GPUBVHNode {
-    AABB aabb;
-    uint32_t objectBufferIndex {BAD_INDEX};
-    uint32_t hitIndex {};
-    uint32_t missIndex {};
-    float pad1{};
-    uint32_t type {};
-    uint32_t numChildren {};
-    glm::vec2 pad2 {};
-};
-
 class BVHNode : public Hittable {
+public:
+    struct GPU_t {
+        AABB aabb;
+        uint32_t objectBufferIndex {BAD_INDEX};
+        uint32_t hitIndex {};
+        uint32_t missIndex {};
+        float pad1 {};
+        uint32_t type {};
+        uint32_t numChildren {};
+        glm::vec2 pad2 {};
+    };
+
 public:
     BVHNode(std::vector<std::shared_ptr<Hittable>> &objects, int start, int end) {
         int axis = std::rand() % 3; // NOLINT
-        auto objectSpan = end - start;
         auto comparator = [=](const auto &a, const auto &b) {
             return (axis == 0) ? box_compare(a, b, 0) : (axis == 1) ? box_compare(a, b, 1) : box_compare(a, b, 2);
         };
 
+        auto objectSpan = end - start;
         switch (objectSpan) {
             case 1:
                 left = right = objects[start];
@@ -56,6 +57,14 @@ public:
         return node.aabb;
     }
 
+    [[nodiscard]] std::vector<std::any> gpu_serialize() const override {
+        throw std::runtime_error("ERROR: BVHNode is not GPU serializable!");
+    };
+
+    [[nodiscard]] Type type() const override {
+        return Hittable::Type::nonLeaf;
+    }
+
 //    std::vector<GPUBVHNode> flatten() {
 //        std::vector<GPUBVHNode> bvh;
 //        flatten(this, bvh, BAD_INDEX, 0);
@@ -63,7 +72,7 @@ public:
 //    }
 
 public:
-    GPUBVHNode node;
+    GPU_t node;
     std::shared_ptr<Hittable> left {nullptr}, right {nullptr};
 
 private:

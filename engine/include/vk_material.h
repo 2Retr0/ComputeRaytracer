@@ -1,8 +1,6 @@
 #pragma once
 
-#include <vector>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_raii.hpp>
+#include "vulkan/vulkan_raii.hpp"
 
 class PipelineBuilder {
 public:
@@ -21,4 +19,24 @@ public:
 
     vk::raii::Pipeline build_graphics_pipeline(const vk::raii::Device &device, const vk::raii::RenderPass &renderpass);
     vk::raii::Pipeline build_compute_pipeline(const vk::raii::Device &device);
+};
+
+struct ShaderEffect {
+    vk::PipelineLayout builtLayout;
+    std::array<vk::DescriptorSetLayout, 4> setLayouts;
+
+    struct ShaderStage {
+        vk::raii::ShaderModule *shaderModule;
+        vk::ShaderStageFlagBits stage;
+    };
+
+    std::vector<ShaderStage> stages;
+
+    //others omitted
+};
+
+struct ShaderPass {
+    ShaderEffect *effect {nullptr};
+    vk::raii::Pipeline pipeline {VK_NULL_HANDLE};
+    vk::PipelineLayout layout {VK_NULL_HANDLE};
 };

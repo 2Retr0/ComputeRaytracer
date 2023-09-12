@@ -1,7 +1,6 @@
 #include "vk_engine.h"
-#include "shapes.h"
 #include "vk_initializers.h"
-#include "vk_pipeline.h"
+#include "vk_material.h"
 #include "vk_textures.h"
 
 #include <imgui.h>
@@ -15,7 +14,7 @@
 #define VMA_IMPLEMENTATION
 // Source:
 // https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/issues/280#issuecomment-1453812255
-#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_STATIC_VULKAN_FUNCTIONS  0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #include <vk_mem_alloc.h>
 #include <vulkan-memory-allocator-hpp/vk_mem_alloc.hpp>
@@ -24,14 +23,14 @@
 
 // We want to immediately abort when there is an error. In normal engines, this would give an error message to the
 // user, or perform a dump of state.
-#define VK_CHECK(x)                                                              \
-    do {                                                                         \
-        vk::Result error = x;                                                    \
-        if (error != vk::Result::eSuccess) {                                     \
-            std::cerr << "ERROR: Detected Vulkan error: " << error << std::endl; \
-            abort();                                                             \
-        }                                                                        \
-    } while (0)
+inline void vk_check(vk::Result result) {
+    do {
+        if (result != vk::Result::eSuccess) {
+            std::cerr << "ERROR: Detected Vulkan error: " << to_string(result) << std::endl;
+            abort();
+        }
+    } while (false);
+}
 
 #ifdef NDEBUG
 constexpr bool useValidationLayers = false;
@@ -55,7 +54,6 @@ void VulkanEngine::init() {
         // functionality (includes basic input events like keys or mouse).
         SDL_Init(SDL_INIT_VIDEO);
 
-        auto windowFlags = (SDL_WindowFlags) (SDL_WINDOW_VULKAN);
         auto windowTitle = std::string("VulkanTest2") + (useValidationLayers ? " (DEBUG)" : ""); // NOLINT
         // Create a blank SDL window for our application
         window = SDL_CreateWindow(
@@ -64,19 +62,25 @@ void VulkanEngine::init() {
             SDL_WINDOWPOS_UNDEFINED,               // Window y position (don't care)
             static_cast<int>(windowExtent.width),  // Window height (px)
             static_cast<int>(windowExtent.height), // Window width  (px)
-            windowFlags);
+            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
         init_vulkan();
+
         init_swapchain();
         init_commands();
         init_default_renderpass();
         init_framebuffers();
         init_sync_structures();
-        init_descriptors(); // Some initialized descriptors are needed when creating the pipelines.
-        init_pipelines();
+
+        // We load our scenes before we create descriptors as some buffer sizes are determined by the scene.
         load_images();
         load_meshes();
         init_scene();
+
+        // Some initialized descriptors are needed when creating the pipelines.
+        init_descriptors();
+        init_shaders();
+        init_pipelines();
         init_imgui();
     } catch (vk::Error &error) {
         std::cerr << "ERROR: Detected Vulkan error: " << error.what() << std::endl;
@@ -103,6 +107,7 @@ void VulkanEngine::init() {
 
 
 void VulkanEngine::init_vulkan() {
+    std::cout << "INFO: init_vulkan()" << std::endl;
     // clang-format off
     // --- Initialize Vulkan Instance ---
     vkb::InstanceBuilder builder;
@@ -120,6 +125,7 @@ void VulkanEngine::init_vulkan() {
     debugMessenger = vk::raii::DebugUtilsMessengerEXT(instance, vkbInstance.debug_messenger);
 
     // --- Initialize Vulkan Device ---
+    std::cout << "   --- Initializing Vulkan and SDL Surface..." << std::endl;
     // Get the surface of the window we opened with SDL
     VkSurfaceKHR tempSurface;
     SDL_Vulkan_CreateSurface(window, *instance, &tempSurface);
@@ -144,6 +150,7 @@ void VulkanEngine::init_vulkan() {
     device = vk::raii::Device(chosenGPU, vkbDevice.device);
 
     // --- Grabbing Queues ---
+    std::cout << "   --- Grabbing queues..." << std::endl;
     graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
     graphicsQueueFamily = vkbDevice.get_queue_index(vkb::QueueType::graphics).value();
 
@@ -155,6 +162,11 @@ void VulkanEngine::init_vulkan() {
         .setInstance(*instance)
         .setPVulkanFunctions(&vulkanFunctions));
     // clang-format on
+
+    // --- Setup Descriptor Abstractions ---
+    std::cout << "   --- Setting up descriptor abstractions..." << std::endl;
+    descriptorAllocator = vkutil::DescriptorAllocator(&device);
+    layoutCache = vkutil::DescriptorLayoutCache(&device);
 
     // Allocating multiple things into the same buffer with descriptors pointing to each part is generally a good idea
     // in Vulkan. The main complication that comes from sub-allocating data on a buffer is that you need to be very
@@ -170,9 +182,11 @@ void VulkanEngine::init_vulkan() {
 
 
 void VulkanEngine::init_swapchain() {
-    auto swapchainBuilder = vkb::SwapchainBuilder(*chosenGPU, *device, *surface);
+    std::cout << "INFO: init_swapchain()" << std::endl;
 
     // --- Present Modes ---
+    std::cout << "   --- Creating new swapchain..." << std::endl;
+    auto swapchainBuilder = vkb::SwapchainBuilder(*chosenGPU, *device, *surface);
     // VK_PRESENT_MODE_IMMEDIATE_KHR:    Immediate
     // VK_PRESENT_MODE_FIFO_KHR:         Strong VSync
     // VK_PRESENT_MODE_FIFO_RELAXED_KHR: Adaptive VSync (immediate if below target)
@@ -191,12 +205,14 @@ void VulkanEngine::init_swapchain() {
     swapchain = vk::raii::SwapchainKHR(device, vkbSwapchain.swapchain);
     swapchainImages = vkbSwapchain.get_images().value();
 
+    swapchainImageViews = std::vector<vk::raii::ImageView>();
     auto imageViews = vkbSwapchain.get_image_views().value();
     for (const auto &imageView : imageViews)
         swapchainImageViews.emplace_back(device, imageView);
     swapchainImageFormat = vk::Format(vkbSwapchain.image_format);
 
     // --- Depth Image ---
+    std::cout << "   --- Setting up depth image..." << std::endl;
     auto depthImageExtent = vk::Extent3D(windowExtent.width, windowExtent.height, 1); // Depth image size matches window
 
     depthFormat = vk::Format::eD32Sfloat; // Hard-coding depth format to 32-bit float (most GPUs support it).
@@ -215,14 +231,20 @@ void VulkanEngine::init_swapchain() {
     auto depthViewInfo = vkinit::imageview_create_info(depthFormat, depthImage.image, vk::ImageAspectFlagBits::eDepth);
     depthImageView = vk::raii::ImageView(device, depthViewInfo);
 
+    // --- Dynamic Viewport and Scissor ---
+    std::cout << "   --- Creating dynamic viewport and scissor..." << std::endl;
+    viewport = vk::Viewport(0.0f, 0.0f, static_cast<float>(windowExtent.width), static_cast<float>(windowExtent.height), 0.0f, 1.0f);
+    scissor = vk::Rect2D(vk::Offset2D(0, 0), windowExtent);
+
     // --- Cleanup ---
-    mainDeletionQueue.push([this]() {
-        allocator->destroyImage(depthImage.image, depthImage.allocation);
-    });
+//    mainDeletionQueue.push([this]() {
+//        allocator->destroyImage(depthImage.image, depthImage.allocation);
+//    });
 }
 
 
 void VulkanEngine::init_commands() {
+    std::cout << "INFO: init_commands()" << std::endl;
     // Create a command pool for commands submitted to the graphics queue.
     // We want the pool to allow the resetting of individual command buffers.
     auto commandPoolInfo = vkinit::command_pool_create_info(graphicsQueueFamily, vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
@@ -248,6 +270,7 @@ void VulkanEngine::init_commands() {
 
 
 void VulkanEngine::init_default_renderpass() {
+    std::cout << "INFO: init_default_renderpass()" << std::endl;
     // clang-format off
     // Color Attachments are the description of the image we will be writing into with rendering commands.
     auto colorAttachment = vk::AttachmentDescription()
@@ -326,6 +349,7 @@ void VulkanEngine::init_default_renderpass() {
 
 
 void VulkanEngine::init_framebuffers() {
+    std::cout << "INFO: init_framebuffers()" << std::endl;
     const auto swapchainImageCount = swapchainImages.size();
     // Create the framebuffers for the swapchain images. This will connect the renderpass to the images for rendering.
     framebuffers = std::vector<vk::raii::Framebuffer>();
@@ -345,6 +369,7 @@ void VulkanEngine::init_framebuffers() {
 
 
 void VulkanEngine::init_sync_structures() {
+    std::cout << "INFO: init_sync_structures()" << std::endl;
     // We want to create the fence with the `CREATE_SIGNALED` flag, so we can wait on it before using it on a
     // GPU command (for the first frame)
     auto fenceCreateInfo = vkinit::fence_create_info(vk::FenceCreateFlagBits::eSignaled);
@@ -389,20 +414,19 @@ vk::raii::ShaderModule VulkanEngine::load_shader_module(const char *path) const 
     // clang-format on
 
     // Check if the shader module creation goes well. It's very common to have errors that will fail creation, so we
-    // will not use `VK_CHECK` here.
+    // will not use `vk_check` here.
     return {device, createInfo};
 }
 
 
-void VulkanEngine::init_pipelines() {
+void VulkanEngine::init_shaders() {
+    std::cout << "INFO: init_shaders()" << std::endl;
     // --- Shader Modules ---
-    std::unordered_map<std::string, std::unique_ptr<vk::raii::ShaderModule>> shaderModules;
     std::string shaderBaseDirectory = "../shaders/";
     std::string shaderNames[] = {
         "compute.comp",
         "compute.vert",
         "compute.frag",
-        "compute2.comp",
     };
 
     for (const auto &shaderName : shaderNames) {
@@ -413,11 +437,15 @@ void VulkanEngine::init_pipelines() {
             std::cout << "ERROR: Could not load shader module \"" << shaderName << '"' << std::endl;
             continue;
         }
-        std::cout << "INFO: Loaded shader module \"" + shaderName << "'" << std::endl;
+        std::cout << "   --- Loaded shader module \"" + shaderName << "'" << std::endl;
     }
+}
 
 
+void VulkanEngine::init_pipelines() {
+    std::cout << "INFO: init_pipelines()" << std::endl;
     // --- Pipeline Setup ---
+    std::cout << "   --- Preparing graphics pipeline..." << std::endl;
     PipelineBuilder pipelineBuilder;
     // Vertex input controls how to read vertices from vertex buffers. We aren't using it yet.
     pipelineBuilder.vertexInputInfo = vkinit::vertex_input_state_create_info();
@@ -427,15 +455,15 @@ void VulkanEngine::init_pipelines() {
     pipelineBuilder.inputAssembly = vkinit::input_assembly_create_info(vk::PrimitiveTopology::eTriangleList);
 
     // Build viewport and scissor from the swapchain extents.
-    pipelineBuilder.viewport.x = 0.0f;
-    pipelineBuilder.viewport.y = 0.0f;
-    pipelineBuilder.viewport.width = static_cast<float>(windowExtent.width);
-    pipelineBuilder.viewport.height = static_cast<float>(windowExtent.height);
-    pipelineBuilder.viewport.minDepth = 0.0f;
-    pipelineBuilder.viewport.maxDepth = 1.0f;
-
-    pipelineBuilder.scissor.offset = vk::Offset2D(0, 0);
-    pipelineBuilder.scissor.extent = windowExtent;
+//    pipelineBuilder.viewport.x = 0.0f;
+//    pipelineBuilder.viewport.y = 0.0f;
+//    pipelineBuilder.viewport.width = static_cast<float>(windowExtent.width);
+//    pipelineBuilder.viewport.height = static_cast<float>(windowExtent.height);
+//    pipelineBuilder.viewport.minDepth = 0.0f;
+//    pipelineBuilder.viewport.maxDepth = 1.0f;
+//
+//    pipelineBuilder.scissor.offset = vk::Offset2D(0, 0);
+//    pipelineBuilder.scissor.extent = windowExtent;
 
     // Configure the rasterizer to draw filled triangles.
     pipelineBuilder.rasterizer = vkinit::rasterization_state_create_info(vk::PolygonMode::eFill);
@@ -519,11 +547,11 @@ void VulkanEngine::init_pipelines() {
 
 
     // --- Compute Pipeline Layout ---
+    std::cout << "   --- Creating compute pipeline..." << std::endl;
+    std::vector<vk::DescriptorSetLayout> layouts = { descriptors["compute"]->layout, };
     auto computePipelineLayoutInfo = vkinit::pipeline_layout_create_info();
-    vk::DescriptorSetLayout computeSetLayouts[] = {*computeSetLayout};
-
-    computePipelineLayoutInfo.setLayoutCount = 1;
-    computePipelineLayoutInfo.pSetLayouts = computeSetLayouts;
+    computePipelineLayoutInfo.setLayoutCount = layouts.size();
+    computePipelineLayoutInfo.pSetLayouts = layouts.data();
 
     auto computePipelineLayout = vk::raii::PipelineLayout(device, computePipelineLayoutInfo);
 
@@ -538,22 +566,10 @@ void VulkanEngine::init_pipelines() {
     create_material(std::move(computePipeline), std::move(computePipelineLayout), "compute");
 
     // --- Graphics Pipeline Layout ---
-
+    std::cout << "   --- Creating graphics pipeline..." << std::endl;
     auto graphicsPipelineLayoutInfo = computePipelineLayoutInfo;
-    vk::DescriptorSetLayout graphicsSetLayouts[] = {*graphicsSetLayout};
-
     graphicsPipelineLayoutInfo.setLayoutCount = 1;
-    graphicsPipelineLayoutInfo.pSetLayouts = graphicsSetLayouts;
-
-//    // clang-format off
-//    auto graphicsPushConstant = vk::PushConstantRange()
-//        .setStageFlags(vk::ShaderStageFlagBits::eFragment) // Push constant range is accessible only in the vertex shader
-//        .setOffset(0)                                    // Push constant range starts at the beginning
-//        .setSize(sizeof(CameraPushConstants));             // Push constant range has size of `MeshPushConstants` struct
-//    // clang-format on
-//
-//    graphicsPipelineLayoutInfo.pPushConstantRanges = &graphicsPushConstant;
-//    graphicsPipelineLayoutInfo.pushConstantRangeCount = 1;
+    graphicsPipelineLayoutInfo.pSetLayouts = &descriptors["graphics"]->layout;
 
     auto graphicsPipelineLayout = vk::raii::PipelineLayout(device, graphicsPipelineLayoutInfo);
 
@@ -570,24 +586,27 @@ void VulkanEngine::init_pipelines() {
 
 
 void VulkanEngine::load_images() {
+    std::cout << "INFO: load_images()" << std::endl;
 //    auto lostEmpireImage = vkutil::load_image_from_asset(*this, "../assets/lost_empire-RGBA.tx");
 //    auto imageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, lostEmpireImage.image, vk::ImageAspectFlagBits::eColor);
 //    auto lostEmpire = Texture(lostEmpireImage, vk::raii::ImageView(device, imageviewInfo));
 //    loadedTextures["empire_diffuse"] = Texture(std::move(lostEmpire));
-//
+
+    auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
     auto fumoImage = vkutil::load_image_from_asset(*this, "../assets/cirno_low_u1_v1.tx");
     auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, fumoImage.image, vk::ImageAspectFlagBits::eColor);
-    auto fumo = Texture(fumoImage, vk::raii::ImageView(device, fumoImageviewInfo));
+    auto fumo = Texture(fumoImage, {device, samplerInfo}, {device, fumoImageviewInfo});
     loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
 
     auto earthImage = vkutil::load_image_from_asset(*this, "../assets/earthmap.tx");
     auto earthImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, earthImage.image, vk::ImageAspectFlagBits::eColor);
-    loadedTextures["earth"] = Texture(earthImage, vk::raii::ImageView(device, earthImageviewInfo));
+    loadedTextures["earth"] = Texture(earthImage, {device, samplerInfo}, {device, earthImageviewInfo});
 }
 
 
 void VulkanEngine::load_meshes() {
-    Mesh triangleMesh, monkeyMesh, fumoMesh, lostEmpireMesh;
+    std::cout << "INFO: load_meshes()" << std::endl;
+//    Mesh triangleMesh, monkeyMesh, fumoMesh, lostEmpireMesh;
 //    triangleMesh.vertices.resize(3);
 //
 //    triangleMesh.vertices[0].position = {1.f, 1.f, 0.f};
@@ -599,7 +618,7 @@ void VulkanEngine::load_meshes() {
 //    triangleMesh.vertices[2].color = {0.f, 1.f, 0.f};
 //
 //    monkeyMesh.load_mesh_from_asset("../assets/monkey_smooth.mesh");
-    fumoMesh.load_mesh_from_asset("../assets/cirno_low.mesh");
+//    fumoMesh.load_mesh_from_asset("../assets/cirno_low.mesh");
 //    lostEmpireMesh.load_mesh_from_asset("../assets/lost_empire.mesh");
 //
 //    // We need to make sure both meshes are sent to the GPU. We don't care about vertex normals.
@@ -612,7 +631,7 @@ void VulkanEngine::load_meshes() {
 //    //       no problem now.
 //    meshes["triangle"] = Mesh(std::move(triangleMesh));
 //    meshes["monkey"] = Mesh(std::move(monkeyMesh));
-    meshes["fumo"] = Mesh(std::move(fumoMesh));
+    meshes["fumo"] = vkutil::load_mesh_from_asset("../assets/cirno_low.mesh");
 //    meshes["empire"] = Mesh(std::move(lostEmpireMesh));
 }
 
@@ -632,9 +651,9 @@ void VulkanEngine::upload_mesh(Mesh &mesh) {
 }
 
 
-template<typename T>
+template<typename T, typename U>
 void VulkanEngine::upload_buffer(AllocatedBuffer &buffer, std::vector<T> &objects) {
-    const auto bufferSize = sizeof(T) * objects.size();
+    const auto bufferSize = sizeof(U) * objects.size();
 
     if (bufferSize == 0) return;
 
@@ -645,12 +664,18 @@ void VulkanEngine::upload_buffer(AllocatedBuffer &buffer, std::vector<T> &object
 
     // To push data into a vk::Buffer, we need to map it first. Mapping a buffer will give us a pointer and, once we are
     // done with writing the data, we can unmap.
-    T *objectSSBO;
-    VK_CHECK(allocator->mapMemory(stagingBuffer.allocation, (void **) &objectSSBO));
+    U *objectSSBO;
+    vk_check(allocator->mapMemory(stagingBuffer.allocation, (void **) &objectSSBO));
     // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
     // normally.
-    for (uint32_t i = 0; i < objects.size(); i++)
-        objectSSBO[i] = objects[i];
+    for (uint32_t i = 0; i < objects.size(); i++) {
+        if constexpr (std::is_same<T, std::any>::value)
+            objectSSBO[i] = std::any_cast<U>(objects[i]);
+        else if constexpr (!std::is_same<T, U>::value)
+            objectSSBO[i] = dynamic_cast<U>(objects[i]);
+        else
+            objectSSBO[i] = objects[i];
+    }
     allocator->unmapMemory(stagingBuffer.allocation);
 
     // --- Copy Staging Buffer to GPU ---
@@ -664,52 +689,51 @@ void VulkanEngine::upload_buffer(AllocatedBuffer &buffer, std::vector<T> &object
 
 
 void VulkanEngine::swap_scene(const std::string &sceneName) {
-    currentScene = sceneManager.scenes[sceneName];
+    std::cout << "\n +---------------------------------------------+\n";
+    std::cout << " | Swapping scene to \"" << sceneName << "\"...                |\n";
+    std::cout << " +---------------------------------------------+" << std::endl;
+
+    device.waitIdle();
+    currentScene = sceneManager.get_scene(sceneName);
+    sceneParameters.backgroundColor = currentScene.backgroundColor;
 
 //    for (uint32_t i = 0; i < currentScene.bvh.size(); i++) {
 //        auto node = currentScene.bvh[i];
 //        auto bufferIndex = node.objectBufferIndex;
 //        std::cout << i << " : (objectBufferIndex: " << bufferIndex << ", hitIndex: " << node.hitIndex << ", missIndex: " << node.missIndex << ", numChildren: " << node.numChildren << ")\n";
 //        if (bufferIndex != BAD_INDEX) {
-//            if (node.type == TYPE_SPHERE) {
-//                std::cout << "       -- spheres\n";
-//                for (uint32_t j = bufferIndex; j < bufferIndex + node.numChildren; j++) {
-//                    auto v = currentScene.spheres[j];
-//                    std::cout << "       -- center: (" << v.center.x << ", " << v.center.y << ", " << v.center.z << "), radius: " << v.radius << "\n";
-//                    std::cout << "           -- aabb: (" << node.aabb.min.x << ", " << node.aabb.min.y << ", " << node.aabb.min.z << "), (" << node.aabb.max.x << ", " << node.aabb.max.y << ", " << node.aabb.max.z << ")\n";
-//                }
-//            }
+//            auto t = (currentScene.get_buffer(Hittable::Type::quad))[bufferIndex];
+//            auto quad = *any_cast<Quad::GPUQuad>(t);
+//            std::cout << quad.corner.x << ", " << quad.corner.y << ", " << quad.corner.z << std::endl;
 //        }
+////            if (node.type == TYPE_SPHERE) {
+////                std::cout << "       -- spheres\n";
+////                for (uint32_t j = bufferIndex; j < bufferIndex + node.numChildren; j++) {
+////                    auto v = currentScene.spheres[j];
+////                    std::cout << "       -- center: (" << v.center.x << ", " << v.center.y << ", " << v.center.z << "), radius: " << v.radius << "\n";
+////                    std::cout << "           -- aabb: (" << node.aabb.min.x << ", " << node.aabb.min.y << ", " << node.aabb.min.z << "), (" << node.aabb.max.x << ", " << node.aabb.max.y << ", " << node.aabb.max.z << ")\n";
+////                }
+////            }
+////        }
 //    }
-    // Compute BVH
-    auto bvhSize = sizeof(GPUBVHNode) * currentScene.bvh.size();
-    auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, bvhSize);
 
-    // Compute objects
-    auto sphereBufferSize = sizeof(GPUSphere) * currentScene.spheres.size();
-    auto sphereBufferInfo = vk::DescriptorBufferInfo(sphereObjectBuffer.buffer, 0, sphereBufferSize);
+    // --- New Window Dimensions and Position ---
+    int w0 = windowExtent.width,  // NOLINT
+        h0 = windowExtent.height; // NOLINT
+    int x0, y0, x1, y1, w1, h1;
+    SDL_GetWindowPosition(window, &x0, &y0);
+    SDL_Vulkan_GetDrawableSize(window, nullptr, &h1);
 
-    auto quadBufferSize = sizeof(GPUQuad) * currentScene.quads.size();
-    auto quadBufferInfo = vk::DescriptorBufferInfo(quadObjectBuffer.buffer, 0, quadBufferSize);
+    // Conform new window width to scene aspect ratio.
+    w1 = h1 * currentScene.camera.aspectRatio; // NOLINT
+    // Conform new window position to center of old window.
+    x1 = x0 + (w0 - w1) * 0.5f; // NOLINT
+    y1 = y0 + (h0 - h1) * 0.5f; // NOLINT
 
-    auto triBufferSize = sizeof(GPUTri) * currentScene.tris.size();
-    auto triBufferInfo = vk::DescriptorBufferInfo(triObjectBuffer.buffer, 0, triBufferSize);
-
-    // clang-format off
-    device.updateDescriptorSets({
-        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &bvhBufferInfo, 2),
-        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &sphereBufferInfo, 3),
-        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &quadBufferInfo, 4),
-        vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *computeDescriptor, &triBufferInfo, 6),
-    }, {});
-    // clang-format on
-
-    camera = currentScene.camera;
-    upload_buffer(sphereObjectBuffer, currentScene.spheres);
-    upload_buffer(quadObjectBuffer, currentScene.quads);
-    upload_buffer(triObjectBuffer, currentScene.tris);
-    upload_buffer(computeBvhBuffer, currentScene.bvh);
-    sceneParameters.backgroundColor = currentScene.backgroundColor;
+    SDL_SetWindowSize(window, w1, h1);
+    SDL_SetWindowPosition(window, x1, y1);
+    // Scene buffers need to be uploaded (thus, descriptor shape will change)
+    init_descriptors();
 }
 
 
@@ -781,15 +805,15 @@ void VulkanEngine::init_scene() {
 //    upload_buffer(sphereObjectBuffer, spheres);
 //    upload_buffer(quadObjectBuffer, quads);
 
-    auto fumoImageInfo = vk::DescriptorImageInfo(*computeSampler, *loadedTextures["fumo_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *computeDescriptor, &fumoImageInfo, 5);
-    device.updateDescriptorSets({textureWrite2}, {});
+//    auto fumoImageInfo = vk::DescriptorImageInfo(*computeSampler, *loadedTextures["fumo_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
+//    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *computeDescriptor, &fumoImageInfo, 5);
+//    device.updateDescriptorSets({textureWrite2}, {});
 
 //    auto earthImageInfo = vk::DescriptorImageInfo(*computeSampler, *loadedTextures["earth"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
 //    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *computeDescriptor, &earthImageInfo, 5);
 //    device.updateDescriptorSets({textureWrite2}, {});
 
-    sceneManager.create_scene("book1", Camera({10, 1.5, 2}, {0, 0, -0.25}, 1.0f / 45.0f, 10.0f, 30.0f), DEFAULT_BACKGROUND, []() -> std::shared_ptr<BVHNode> {
+    sceneManager.init_scene({"book1", {{10, 1.5, 2}, {0, 0, -0.25}, 30.0f, 16.0 / 10.0}}, []() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
         for (int a = -7; a < 7; a++) {
             for (int b = -7; b < 7; b++) {
@@ -797,60 +821,61 @@ void VulkanEngine::init_scene() {
                 auto center = glm::vec3(a + 0.9 * random_double(), 0.2, b + 0.9 * random_double());
 
                 if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
-                    if (chooseMaterial < 0.8) { // diffuse
+                    if (chooseMaterial < 0.8) {                       // diffuse
                         auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN)));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, 1.0f, MaterialType::lambertian)));
                     } else if (chooseMaterial < 0.95) { // metal
                         auto albedo = rand(0.5, 1);
                         auto fuzz = rand(0, 0.5).x;
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, fuzz, MAT_METAL)));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, fuzz, MaterialType::metal)));
                     } else { // glass
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC)));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MaterialType::dielectric)));
                     }
                 }
             }
         }
 
         HittableList<Sphere> spheres;
-        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN))));
-        spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MAT_LAMBERTIAN))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MaterialType::lambertian))));
         // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
         // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
-        spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0}, 1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
-        spheres.add(std::make_shared<Sphere>(Sphere({ 0, 1, 0},-0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MAT_DIELECTRIC))));
-        spheres.add(std::make_shared<Sphere>(Sphere({ 4, 1, 0}, 1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MAT_METAL))));
-        //
+        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, 1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, -0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric))));
+        spheres.add(std::make_shared<Sphere>(Sphere({4, 1, 0}, 1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MaterialType::metal))));
         world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
 
         return std::make_shared<BVHNode>(world, 0, world.size());
     });
 
-    sceneManager.create_scene("quads", Camera({0, 0, 9}, {0, 0, 0}, 1.0f / 45.0f, 10.0f, 80.0f), DEFAULT_BACKGROUND, []() -> std::shared_ptr<BVHNode> {
+    sceneManager.init_scene({"quads", {{0, 0, 9}, {0, 0, 0}, 80.0f, 1.0f, 0.0f}}, []() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
+        HittableList<Quad> quads;
 
-        world.push_back(std::make_shared<Quad>(Quad({-3,-2, 5}, {0, 0,-4}, {0, 4, 0}, GPUMaterial({1.0, 0.2, 0.2}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({-2,-2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial({0.2, 1.0, 0.2}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({ 3,-2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial({0.2, 0.2, 1.0}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial({1.0, 0.5, 0.0}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({-2,-3, 5}, {4, 0, 0}, {0, 0,-4}, GPUMaterial({0.2, 0.8, 0.8}, 0.0f, MAT_LAMBERTIAN))));
+        quads.add(std::make_shared<Quad>(Quad({-3, -2, 5}, {0, 0, -4}, {0, 4, 0}, GPUMaterial({1.0, 0.2, 0.2}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({-2, -2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial({0.2, 1.0, 0.2}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({3, -2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial({0.2, 0.2, 1.0}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial({1.0, 0.5, 0.0}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({-2, -3, 5}, {4, 0, 0}, {0, 0, -4}, GPUMaterial({0.2, 0.8, 0.8}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<HittableList<Quad>>(quads));
 
         return std::make_shared<BVHNode>(world, 0, world.size());
     });
 
-    sceneManager.create_scene("corne", Camera({1, 1, -2.878}, {1, 1, 0}, 0.0f, 10.0f, 40.0f), glm::vec3(0.0), []() -> std::shared_ptr<BVHNode> {
+    sceneManager.init_scene({"corne", {{1, 1, -2.878}, {1, 1, 0}, 40.0f, 1.0f, 0.0f}, glm::vec3(0.0)}, []() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
 
-        world.push_back(std::make_shared<Quad>(Quad({2, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.12, 0.45, 0.15}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.65, 0.05, 0.05}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({1.234, 1.993, 1.194}, {-0.468, 0, 0}, {0, 0, -0.378}, GPUMaterial({15, 15, 15}, 0.0f, MAT_DIFFUSE_LIGHT))));
-        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {2, 0, 0}, {0, 0, 2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({2, 2, 2}, {-2, 0, 0}, {0, 0, -2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MAT_LAMBERTIAN))));
-        world.push_back(std::make_shared<Quad>(Quad({0, 0, 2}, {2, 0, 0}, {0, 2, 0}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MAT_LAMBERTIAN))));
+        world.push_back(std::make_shared<Quad>(Quad({2, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.12, 0.45, 0.15}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.65, 0.05, 0.05}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({1.234, 1.993, 1.194}, {-0.468, 0, 0}, {0, 0, -0.378}, GPUMaterial({15, 15, 15}, 0.0f, MaterialType::diffuseLight))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {2, 0, 0}, {0, 0, 2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({2, 2, 2}, {-2, 0, 0}, {0, 0, -2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 2}, {2, 0, 0}, {0, 2, 0}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
 
         return std::make_shared<BVHNode>(world, 0, world.size());
     });
 
-    sceneManager.create_scene("cirno", Camera({0, 2, 5}, {0, 1, 0}, 0.0f, 10.0f, 80.0f), DEFAULT_BACKGROUND, [&]() -> std::shared_ptr<BVHNode> {
+    sceneManager.init_scene({"cirno", {{0, 2, 5}, {0, 1, 0}, 80.0f, 16.0 / 10.0, 0.0f}}, [&]() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
 
         auto *fumoMesh = &meshes["fumo"];
@@ -872,46 +897,31 @@ void VulkanEngine::init_scene() {
             auto v = glm::vec3(v0.uv[1], v1.uv[1], v2.uv[1]);
 
             world.push_back(std::make_shared<Tri>(
-                Tri(v0.position - glm::vec3(0, 0.08, 0), v1.position - glm::vec3(0, 0.08, 0), v2.position - glm::vec3(0, 0.08, 0), u, v, {{0, 1, 1}, 0.0, MAT_LAMBERTIAN})));
-        }
-
-        for (int a = -7; a < 7; a++) {
-            for (int b = -7; b < 7; b++) {
-                if (a == 0 || b == 0) continue;
-
-                auto chooseMaterial = random_double();
-                auto center = glm::vec3(2.5 * a + 0.9 * random_double(), 0.4, 2.5 * b + 0.9 * random_double());
-
-                if ((center - glm::vec3(4, 0.4, 0)).length() > 0.9) { // NOLINT
-                    if (chooseMaterial < 0.8) { // diffuse
-                        auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
-                        world.push_back(std::make_shared<Sphere>(center, 0.4f, GPUMaterial(albedo, 1.0f, MAT_LAMBERTIAN)));
-                    } else if (chooseMaterial < 0.95) { // metal
-                        auto albedo = rand(0.5, 1);
-                        auto fuzz = rand(0, 0.5).x;
-                        world.push_back(std::make_shared<Sphere>(center, 0.4f, GPUMaterial(albedo, fuzz, MAT_METAL)));
-                    } else { // glass
-                        world.push_back(std::make_shared<Sphere>(center, 0.4f, GPUMaterial({0, 0, 0}, 1.5f, MAT_DIELECTRIC)));
-                    }
-                }
-            }
+                Tri(v0.position - glm::vec3(0, 0.08, 0), v1.position - glm::vec3(0, 0.08, 0), v2.position - glm::vec3(0, 0.08, 0), u, v, {{0, 1, 1}, 0.0, MaterialType::lambertian})));
         }
 
         HittableList<Sphere> spheres;
-        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MAT_LAMBERTIAN))));
-        spheres.add(std::make_shared<Sphere>(Sphere({-4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MAT_METAL))));
-        spheres.add(std::make_shared<Sphere>(Sphere({4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MAT_METAL))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MaterialType::metal))));
+        spheres.add(std::make_shared<Sphere>(Sphere({4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MaterialType::metal))));
 
         world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
 
         return std::make_shared<BVHNode>(world, 0, world.size());
     });
 
-    swap_scene("cirno");
+    currentScene = sceneManager.get_scene("cirno");
+    sceneParameters.backgroundColor = currentScene.backgroundColor;
+
+    int width  = windowExtent.height * currentScene.camera.aspectRatio; // NOLINT
+    int height = windowExtent.height; // NOLINT
+    SDL_SetWindowSize(window, width, height);
+//    swap_scene("cirno");
 }
 
 
 void VulkanEngine::init_imgui() {
+    std::cout << "INFO: init_imgui()" << std::endl;
     // --- Create Descriptor Pool for ImGui ---
     // The size of the pool is very oversized, but it doesn't matter
     vk::DescriptorPoolSize poolSizes[] = {
@@ -1002,7 +1012,7 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
 //    sceneParameters.sunlightDirection = {sin(framed) * 3.0f, 2.0f, cos(framed) * 3.0f, 0.1};
 //
 //    uint8_t *sceneData;
-//    VK_CHECK(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData));
+//    vk_check(allocator->mapMemory(sceneParameterBuffer.allocation, (void **) &sceneData));
 //
 //    // Write camera parameter data
 //    sceneData += FRAME_OFFSET * frameIndex;
@@ -1016,7 +1026,7 @@ void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, Re
 //
 //    // --- Writing Object Storage Data ---
 //    void *objectData;
-//    VK_CHECK(allocator->mapMemory(currentFrame.objectBuffer.allocation, &objectData));
+//    vk_check(allocator->mapMemory(currentFrame.objectBuffer.allocation, &objectData));
 //
 //    // Instead of using `memcpy` here, we cast `void*` to another type (Shader Storage Buffer Object) and write to it
 //    // normally.
@@ -1078,6 +1088,8 @@ FrameData &VulkanEngine::get_current_frame() {
 
 
 AllocatedBuffer VulkanEngine::create_buffer(size_t size, vk::BufferUsageFlags bufferUsage, vma::MemoryUsage memoryUsage) {
+    if (size == 0) size = 1;
+
     // --- Allocate Vertex Buffer ---
     auto bufferInfo = vk::BufferCreateInfo({}, size, bufferUsage);
     auto vmaAllocInfo = vma::AllocationCreateInfo({}, memoryUsage);
@@ -1088,160 +1100,160 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t size, vk::BufferUsageFlags bu
 
 
 void VulkanEngine::init_descriptors() {
+    std::cout << "INFO: init_descriptors()" << std::endl;
     const auto SCENE_BUFFER_SIZE = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
-    const int MAX_OBJECTS = (int) 10E3;
 
-    // --- Descriptor Pool Setup ---
-    // When creating a descriptor pool, you need to specify how many descriptors of each type you will need, and what’s
-    // the maximum number of sets to allocate from it.
-
-    // Create a descriptor pool that will hold 10 dynamic uniform buffer handles and 10 storage buffer handles, each
-    // with a maximum of 10 descriptor sets.
-    std::vector<vk::DescriptorPoolSize> sizes = {
-        {vk::DescriptorType::eUniformBufferDynamic, 10},
-        {vk::DescriptorType::eStorageBuffer, 10},
-        {vk::DescriptorType::eCombinedImageSampler, 10}, // Add combined-image-sampler descriptor types to the pool
-        {vk::DescriptorType::eStorageImage, 10},
-    };
-
-    auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, static_cast<uint32_t>(sizes.size()), sizes.data());
-    descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolInfo);
-
-    // --- Descriptor Set Layouts ---
-    // Global descriptor set
-    // Binding for scene data + camera data at 0 and scene data at 1
-    auto sceneBinding = vkinit::descriptor_set_layout_binding(
-        vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 0);
-    auto globalSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &sceneBinding);
-    globalSetLayout = vk::raii::DescriptorSetLayout(device, globalSetInfo);
-
-    // Object descriptor set
-    auto objectBinding = vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex, 0);
-    auto objectSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &objectBinding);
-    objectSetLayout = vk::raii::DescriptorSetLayout(device, objectSetInfo);
-
-    // Texture descriptor set which holds a single texture
-    auto singleTextureBinding = vkinit::descriptor_set_layout_binding(
-        vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 0);
-    auto singleTextureSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &singleTextureBinding);
-    singleTextureSetLayout = vk::raii::DescriptorSetLayout(device, singleTextureSetInfo);
+//    // --- Descriptor Pool Setup ---
+//    // When creating a descriptor pool, you need to specify how many descriptors of each type you will need, and what’s
+//    // the maximum number of sets to allocate from it.
+//
+//    // Create a descriptor pool that will hold 10 dynamic uniform buffer handles and 10 storage buffer handles, each
+//    // with a maximum of 10 descriptor sets.
+//    std::vector<vk::DescriptorPoolSize> sizes = {
+//        {vk::DescriptorType::eUniformBufferDynamic, 10},
+//        {vk::DescriptorType::eStorageBuffer, 10},
+//        {vk::DescriptorType::eCombinedImageSampler, 10}, // Add combined-image-sampler descriptor types to the pool
+//        {vk::DescriptorType::eStorageImage, 10},
+//    };
+//
+//    auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, static_cast<uint32_t>(sizes.size()), sizes.data());
+//    descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolInfo);
+//
+//    // --- Descriptor Set Layouts ---
+//    // Global descriptor set
+//    // Binding for scene data + camera data at 0 and scene data at 1
+//    auto sceneBinding = vkinit::descriptor_set_layout_binding(
+//        vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 0);
+//    auto globalSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &sceneBinding);
+//    globalSetLayout = vk::raii::DescriptorSetLayout(device, globalSetInfo);
+//
+//    // Object descriptor set
+//    auto objectBinding = vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex, 0);
+//    auto objectSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &objectBinding);
+//    objectSetLayout = vk::raii::DescriptorSetLayout(device, objectSetInfo);
+//
+//    // Texture descriptor set which holds a single texture
+//    auto singleTextureBinding = vkinit::descriptor_set_layout_binding(
+//        vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 0);
+//    auto singleTextureSetInfo = vk::DescriptorSetLayoutCreateInfo({}, 1, &singleTextureBinding);
+//    singleTextureSetLayout = vk::raii::DescriptorSetLayout(device, singleTextureSetInfo);
 
     {
-        // Compute descriptor set
-        // Compute shader
-        // clang-format on
-        auto computeImageInfo = vkinit::image_create_info(
-            vk::Format::eR32G32B32A32Sfloat,
-            vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
-            vk::Extent3D(windowExtent.width, windowExtent.height, 1));
-        computeImageInfo.initialLayout = vk::ImageLayout::eUndefined;
+        std::cout << "   --- Creating compute storage image..." << std::endl;
+        auto imageFormat = vk::Format::eR32G32B32A32Sfloat;
+        // clang-format off
+        auto computeImageInfo = vkinit::image_create_info(imageFormat, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::Extent3D(windowExtent.width, windowExtent.height, 1))
+            .setInitialLayout(vk::ImageLayout::eUndefined);
         auto computeImageAllocationInfo = vma::AllocationCreateInfo()
-                                              .setUsage(vma::MemoryUsage::eGpuOnly)
-                                              .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
-        // clang-format on
+            .setUsage(vma::MemoryUsage::eGpuOnly)
+            .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
+
         auto computeImage = static_cast<AllocatedImage>(allocator->createImage(computeImageInfo, computeImageAllocationInfo));
-        auto computeViewInfo = vkinit::imageview_create_info(vk::Format::eR32G32B32A32Sfloat, computeImage.image, vk::ImageAspectFlagBits::eColor);
+        auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
+        auto computeViewInfo = vkinit::imageview_create_info(imageFormat, computeImage.image, vk::ImageAspectFlagBits::eColor);
+        computeTexture = Texture(computeImage, {device, samplerInfo}, {device, computeViewInfo});
+        // clang-format on
 
-        computeTexture = Texture(computeImage, vk::raii::ImageView(device, computeViewInfo));
+        auto spheres = currentScene.get_buffer(Hittable::Type::sphere);
+        auto quads = currentScene.get_buffer(Hittable::Type::quad);
+        auto tris = currentScene.get_buffer(Hittable::Type::tri);
 
-        std::vector<vk::DescriptorSetLayoutBinding> computeBindings = {
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eCompute, 0),
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute, 1),
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 2),
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 3),
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 4),
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute, 5),
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute, 6),
-        };
-        auto computeSetInfo = vk::DescriptorSetLayoutCreateInfo({}, static_cast<uint32_t>(computeBindings.size()), computeBindings.data());
-        computeSetLayout = vk::raii::DescriptorSetLayout(device, computeSetInfo);
-
-        auto computeSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *computeSetLayout);
-        computeDescriptor = std::move(device.allocateDescriptorSets(computeSetAllocInfo).front());
-
+        std::cout << "   --- Allocating GPU SSBOs..." << std::endl;
         // Compute camera
         computeParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
+
+        computeBvhBuffer = create_buffer(sizeof(BVHNode::GPU_t) * currentScene.bvh.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        sphereObjectBuffer = create_buffer(sizeof(Sphere::GPU_t) * spheres.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        quadObjectBuffer = create_buffer(sizeof(Quad::GPU_t) * quads.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        triObjectBuffer = create_buffer(sizeof(Tri::GPU_t) * tris.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+
+        std::cout << "   --- Creating compute descriptor..." << std::endl;
         auto computeCameraBufferInfo = vk::DescriptorBufferInfo(computeParameterBuffer.buffer, 0, sizeof(GPUSceneData));
+        auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeTexture.sampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
+        auto fumoTextureBufferInfo = vk::DescriptorImageInfo(*loadedTextures["fumo_diffuse"].sampler, *loadedTextures["fumo_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
 
-        // Compute texture
-        auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
-        computeSampler = vk::raii::Sampler(device, samplerInfo);
-        auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeSampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
+        // Compute BVH
+        auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, sizeof(BVHNode::GPU_t) * currentScene.bvh.size());
 
-        computeBvhBuffer = create_buffer(sizeof(GPUBVHNode) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        sphereObjectBuffer = create_buffer(sizeof(GPUSphere) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        quadObjectBuffer = create_buffer(sizeof(GPUQuad) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        triObjectBuffer = create_buffer(sizeof(GPUTri) * 1E5, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        // Compute objects
+        auto sphereBufferInfo = vk::DescriptorBufferInfo(sphereObjectBuffer.buffer, 0, sizeof(Sphere::GPU_t) * spheres.size());
+        auto quadBufferInfo = vk::DescriptorBufferInfo(quadObjectBuffer.buffer, 0, sizeof(Quad::GPU_t) * quads.size());
+        auto triBufferInfo = vk::DescriptorBufferInfo(triObjectBuffer.buffer, 0, sizeof(Tri::GPU_t) * tris.size());
 
-        std::vector<vk::WriteDescriptorSet> computeWrites = {
-            vkinit::write_descriptor_image(vk::DescriptorType::eStorageImage, *computeDescriptor, &computeTextureBufferInfo, 0),
-            vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *computeDescriptor, &computeCameraBufferInfo, 1),
-        };
+        // clang-format off
+        descriptors["compute"] = vkutil::DescriptorBuilder::begin(&layoutCache, &descriptorAllocator)
+            .bind_image( 0, &computeTextureBufferInfo, vk::DescriptorType::eStorageImage,         vk::ShaderStageFlagBits::eCompute)
+            .bind_buffer(1, &computeCameraBufferInfo,  vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute)
+            .bind_buffer(2, &bvhBufferInfo,            vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
+            .bind_buffer(3, &sphereBufferInfo,         vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
+            .bind_buffer(4, &quadBufferInfo,           vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
+            .bind_image( 5, &fumoTextureBufferInfo,    vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute)
+            .bind_buffer(6, &triBufferInfo,            vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
+            .build();
 
-        device.updateDescriptorSets(computeWrites, {});
+        std::cout << "   --- Creating graphic descriptor..." << std::endl;
+        descriptors["graphics"] = vkutil::DescriptorBuilder::begin(&layoutCache, &descriptorAllocator)
+            .bind_image(0, &computeTextureBufferInfo, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .build();
+        // clang-format on
 
+//        auto spheres = currentScene.get_buffer(Hittable::Type::sphere);
+//        auto quads = currentScene.get_buffer(Hittable::Type::quad);
+//        auto tris = currentScene.get_buffer(Hittable::Type::tri);
 
-
-        std::vector<vk::DescriptorSetLayoutBinding> graphicsBindings = {
-            vkinit::descriptor_set_layout_binding(vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment, 0),
-        };
-        auto graphicsSetInfo = vk::DescriptorSetLayoutCreateInfo({}, static_cast<uint32_t>(graphicsBindings.size()), graphicsBindings.data());
-        graphicsSetLayout = vk::raii::DescriptorSetLayout(device, graphicsSetInfo);
-
-        auto graphicsSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *graphicsSetLayout);
-        graphicsDescriptor = std::move(device.allocateDescriptorSets(graphicsSetAllocInfo).front());
-
-        std::vector<vk::WriteDescriptorSet> graphicsWrites = {
-            vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *graphicsDescriptor, &computeTextureBufferInfo, 0),
-        };
-
-        device.updateDescriptorSets(graphicsWrites, {});
+        upload_buffer<std::any, Sphere::GPU_t>(sphereObjectBuffer, spheres);
+        upload_buffer<std::any, Quad::GPU_t>(quadObjectBuffer, quads);
+        upload_buffer<std::any, Tri::GPU_t>(triObjectBuffer, tris);
+        upload_buffer(computeBvhBuffer, currentScene.bvh);
     }
 
-    // --- Descriptor/Buffer Allocation ---
-    auto globalDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *globalSetLayout);
-    globalDescriptor = std::move(device.allocateDescriptorSets(globalDescriptorSetAllocInfo).front());
-
-    // Uniform buffers are the best for this sort of small, read only shader data. They have a size limitation, but
-    // they are very fast to access in the shaders.
-    // Due to alignment, we will have to increase the size of the buffer so that it fits two padded `GPUSceneData` and
-    // `GPUCameraData` structs.
-    sceneParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
-
-    for (auto &frame : frames) {
-        // With storage buffers, you can have an unsized array in a shader with whatever data you want. A common use
-        // for them is to store the data of all the objects in the scene.
-        frame.objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
-
-        auto objectDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *objectSetLayout);
-        frame.objectDescriptor = vk::raii::DescriptorSet(std::move(device.allocateDescriptorSets(objectDescriptorSetAllocInfo).front()));
-
-        // We now have a descriptor stored in our frame struct. But this descriptor is not pointing to any buffer yet,
-        // so we need to make it point into our buffers.
-        auto sceneBufferInfo = vk::DescriptorBufferInfo(sceneParameterBuffer.buffer, 0, sizeof(GPUCameraData) + sizeof(GPUSceneData));
-        auto objectBufferInfo = vk::DescriptorBufferInfo(frame.objectBuffer.buffer, 0, sizeof(GPUObjectData) * MAX_OBJECTS);
-
-        auto sceneWrite = vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *globalDescriptor, &sceneBufferInfo, 0);
-        auto objectWrite = vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *frame.objectDescriptor, &objectBufferInfo, 0);
-        std::array setWrites = {sceneWrite, objectWrite};
-
-        // Note: We use one call to `vkUpdateDescriptorSets()` to update *two* different descriptor sets--this is
-        //       completely valid to do!
-        device.updateDescriptorSets({sceneWrite, objectWrite}, {});
-    }
-
-    // --- Cleanup ---
-    mainDeletionQueue.push([this]() {
-        // Add buffers to deletion queues
-        for (auto &frame : frames) {
-            allocator->destroyBuffer(frame.objectBuffer.buffer, frame.objectBuffer.allocation);
-        }
-        allocator->destroyBuffer(sceneParameterBuffer.buffer, sceneParameterBuffer.allocation);
-    });
+//    // --- Descriptor/Buffer Allocation ---
+//    auto globalDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *globalSetLayout);
+//    globalDescriptor = std::move(device.allocateDescriptorSets(globalDescriptorSetAllocInfo).front());
+//
+//    // Uniform buffers are the best for this sort of small, read only shader data. They have a size limitation, but
+//    // they are very fast to access in the shaders.
+//    // Due to alignment, we will have to increase the size of the buffer so that it fits two padded `GPUSceneData` and
+//    // `GPUCameraData` structs.
+//    sceneParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
+//
+//    for (auto &frame : frames) {
+//        // With storage buffers, you can have an unsized array in a shader with whatever data you want. A common use
+//        // for them is to store the data of all the objects in the scene.
+//        frame.objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, vk::BufferUsageFlagBits::eStorageBuffer, vma::MemoryUsage::eCpuToGpu);
+//
+//        auto objectDescriptorSetAllocInfo = vk::DescriptorSetAllocateInfo(*descriptorPool, *objectSetLayout);
+//        frame.objectDescriptor = vk::raii::DescriptorSet(std::move(device.allocateDescriptorSets(objectDescriptorSetAllocInfo).front()));
+//
+//        // We now have a descriptor stored in our frame struct. But this descriptor is not pointing to any buffer yet,
+//        // so we need to make it point into our buffers.
+//        auto sceneBufferInfo = vk::DescriptorBufferInfo(sceneParameterBuffer.buffer, 0, sizeof(GPUCameraData) + sizeof(GPUSceneData));
+//        auto objectBufferInfo = vk::DescriptorBufferInfo(frame.objectBuffer.buffer, 0, sizeof(GPUObjectData) * MAX_OBJECTS);
+//
+//        auto sceneWrite = vkinit::write_descriptor_buffer(vk::DescriptorType::eUniformBufferDynamic, *globalDescriptor, &sceneBufferInfo, 0);
+//        auto objectWrite = vkinit::write_descriptor_buffer(vk::DescriptorType::eStorageBuffer, *frame.objectDescriptor, &objectBufferInfo, 0);
+//        std::array setWrites = {sceneWrite, objectWrite};
+//
+//        // Note: We use one call to `vkUpdateDescriptorSets()` to update *two* different descriptor sets--this is
+//        //       completely valid to do!
+//        device.updateDescriptorSets({sceneWrite, objectWrite}, {});
+//    }
+//
+//    // --- Cleanup ---
+//    mainDeletionQueue.push([this]() {
+//        // Add buffers to deletion queues
+//        for (auto &frame : frames) {
+//            allocator->destroyBuffer(frame.objectBuffer.buffer, frame.objectBuffer.allocation);
+//        }
+//        allocator->destroyBuffer(sceneParameterBuffer.buffer, sceneParameterBuffer.allocation);
+//    });
 }
 
 
-size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) const { // NOLINT
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "ConstantParameter"
+size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) const {
+#pragma clang diagnostic pop
     // Calculate the required alignment based on minimum device-offset alignment
     size_t minOffsetAlignment = gpuProperties.limits.minUniformBufferOffsetAlignment;
     size_t alignedSize = originalSize;
@@ -1270,10 +1282,45 @@ void VulkanEngine::immediate_submit(std::function<void(vk::CommandBuffer command
 
     // Submit command buffer to the queue and execute it. `uploadFence` will now block until the graphics commands finish.
     graphicsQueue.submit(submitInfo, *uploadContext.uploadFence);
-    VK_CHECK(device.waitForFences({*uploadContext.uploadFence}, true, (uint64_t) 1E11));
+    vk_check(device.waitForFences({*uploadContext.uploadFence}, true, (uint64_t) 1E11));
     device.resetFences({*uploadContext.uploadFence});
     // Reset the command buffers within the command pool.
     uploadContext.commandPool.reset({});
+}
+
+
+void VulkanEngine::recreate_swapchain() {
+    std::cout << "INFO: recreate_swapchain()" << std::endl;
+    device.waitIdle();
+
+    // --- Handle Minimization ---
+    // In the case of minimization, wait until the window is maximized again.
+    while (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) SDL_WaitEvent(nullptr);
+
+    // --- Clear Existing Swapchain/ImageViews ---
+    std::cout << "   --- Clearing existing swapchain..." << std::endl;
+    for (auto &framebuffer : framebuffers) framebuffer.clear();
+    for (auto &imageView : swapchainImageViews) imageView.clear();
+    swapchain.clear();
+
+    // --- Set Window Dimensions ---
+    std::cout << "   --- Setting new window dimensions ";
+    int w0 = windowExtent.width,  // NOLINT
+        h0 = windowExtent.height; // NOLINT
+    int w1, h1;
+    SDL_Vulkan_GetDrawableSize(window, &w1, &h1);
+    SDL_SetWindowSize(window, w1, h1);
+    std::cout << '(' << w0 << "->" << w1 << ", " << h0 << "->" << h1 << ")..." << std::endl;
+
+    windowExtent = vk::Extent2D(w1, h1);
+    currentScene.camera.aspectRatio = (float) w1 / (float) h1;
+
+    // --- Recreate Swapchain ---
+    init_swapchain();
+    init_framebuffers();
+    if (w0 != w1 || h0 != h1) init_descriptors();
+
+    shouldRecreateSwapchain = false;
 }
 
 
@@ -1300,14 +1347,18 @@ void VulkanEngine::draw() {
 
     // --- Setup ---
     // Wait until the GPU has finished rendering the last frame (timeout = 1s)
-    VK_CHECK(device.waitForFences({*currentFrame.renderFence}, true, (uint64_t) 5E9));
-    device.resetFences({*currentFrame.renderFence});
+    vk_check(device.waitForFences({*currentFrame.renderFence}, true, (uint64_t) 1E9));
 
     // Request image from the swapchain (timeout = 1s). We use `presentSemaphore` to make sure that we can sync other
     // operations with the swapchain having an image ready to render.
     uint32_t swapchainImageIndex;
-    swapchainImageIndex = swapchain.acquireNextImage((uint64_t) 1E9, *currentFrame.presentSemaphore, VK_NULL_HANDLE).second;
+    try {
+        swapchainImageIndex = swapchain.acquireNextImage((uint64_t) 1E9, *currentFrame.presentSemaphore, VK_NULL_HANDLE).second;
+    } catch (vk::OutOfDateKHRError &error) {
+        recreate_swapchain();
+    }
 
+    device.resetFences({*currentFrame.renderFence});
     // Commands have finished execution at this point; we can safely reset the command buffer to begin enqueuing again.
     currentFrame.mainCommandBuffer.reset({});
 
@@ -1331,12 +1382,12 @@ void VulkanEngine::draw() {
         const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(GPUSceneData)));
 
         // --- Writing Scene Data ---
-        camera.props.seed = static_cast<float>(rand()) / 1E3f; // NOLINT
-        sceneParameters.camera = camera.props; // Update camera for scene parameters.
+        currentScene.camera.props.seed = static_cast<float>(rand()) / 1E3f; // NOLINT
+        sceneParameters.camera = currentScene.camera.props; // Update camera for scene parameters.
 
 
         uint8_t *computeSceneData;
-        VK_CHECK(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeSceneData));
+        vk_check(allocator->mapMemory(computeParameterBuffer.allocation, (void **) &computeSceneData));
 
         // Write camera parameter data
         auto frameIndex = frameNumber % FRAME_OVERLAP;
@@ -1352,14 +1403,13 @@ void VulkanEngine::draw() {
 
         commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, {imageMemoryBarrier});
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computeMaterial->pipeline);
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, *computeDescriptor, uniformOffset);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, *descriptors["compute"]->set, uniformOffset);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, *descriptors["compute"]->set, uniformOffset);
         commandBuffer.dispatch(windowExtent.width / 8, windowExtent.height / 8, 1);
 
         imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         imageMemoryBarrier.dstAccessMask = {};
         commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eBottomOfPipe, {}, {}, {}, {imageMemoryBarrier});
-
-
 
         // Start the main renderpass. We will use the clear color from above, and the framebuffer of the index the swapchain
         // gave us.
@@ -1375,7 +1425,9 @@ void VulkanEngine::draw() {
         commandBuffer.beginRenderPass(renderpassInfo, vk::SubpassContents::eInline);
 
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipeline);
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipelineLayout, 0, {*graphicsDescriptor}, {});
+        commandBuffer.setViewport(0, viewport);
+        commandBuffer.setScissor(0, scissor);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipelineLayout, 0, {*descriptors["graphics"]->set}, {});
         commandBuffer.draw(3, 1, 0, 0);
     }
 
@@ -1409,14 +1461,18 @@ void VulkanEngine::draw() {
         .setPImageIndices(&swapchainImageIndex);
     // clang-format on
 
-    VK_CHECK(graphicsQueue.presentKHR(presentInfo));
-
+    try {
+        if (graphicsQueue.presentKHR(presentInfo) == vk::Result::eSuboptimalKHR)
+            recreate_swapchain();
+    } catch(vk::OutOfDateKHRError &error) {
+        recreate_swapchain();
+    }
     frameNumber++;
 }
 
 
 void VulkanEngine::run() {
-    SDL_Event windowEvent;
+    SDL_Event event;
     bool shouldQuit = false;
     int mouseX, mouseY;
 
@@ -1428,9 +1484,9 @@ void VulkanEngine::run() {
     while (!shouldQuit) {
         // --- Handle Input ---
         // Handle all events the OS has sent to the application since the last frame.
-        while (SDL_PollEvent(&windowEvent) != 0) {
-            ImGui_ImplSDL2_ProcessEvent(&windowEvent);
-            switch (windowEvent.type) {
+        while (SDL_PollEvent(&event) != 0) {
+            ImGui_ImplSDL2_ProcessEvent(&event);
+            switch (event.type) {
                 case SDL_KEYDOWN:
                     //                    switch (windowEvent.key.keysym.sym) {
                     //                        default:
@@ -1440,6 +1496,11 @@ void VulkanEngine::run() {
                     // Refresh relative mouse coordinates before motion is handled.
                     SDL_GetRelativeMouseState(&mouseX, &mouseY);
                     break;
+                case SDL_WINDOWEVENT:
+                    if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                        shouldRecreateSwapchain = true;
+                    }
+                    break;
                 case SDL_QUIT:
                     // Close the window when the user presses ALT-F4 or the 'x' button.
                     shouldQuit = true;
@@ -1447,8 +1508,10 @@ void VulkanEngine::run() {
             }
         }
 
-        // --- Draw ---
+        // --- Draw Frame ---
         auto startTicksMs = ticksMs;
+
+        if (shouldRecreateSwapchain) recreate_swapchain();
 
         // ImGui new frame
         ImGui_ImplVulkan_NewFrame();
@@ -1465,12 +1528,12 @@ void VulkanEngine::run() {
             ImGui::TableSetColumnIndex(0); ImGui::Text("FPS");
             ImGui::TableSetColumnIndex(1); ImGui::Text("%d", fps);
 
-            auto position = camera.props.position;
+            auto position = currentScene.camera.props.position;
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Position");
             ImGui::TableSetColumnIndex(1); ImGui::Text("(%.2f, %.2f, %.2f)", position.x, position.y, position.z);
 
-            auto iteration = static_cast<int>(camera.props.iteration);
+            auto iteration = static_cast<int>(currentScene.camera.props.iteration);
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Frame");
             ImGui::TableSetColumnIndex(1); ImGui::Text("%d", iteration);
@@ -1481,18 +1544,18 @@ void VulkanEngine::run() {
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Field of View");
-            ImGui::TableSetColumnIndex(1); ImGui::SliderFloat("##fov", &camera.fovDegrees, 20.0f, 160.0f, "%.1f deg");
+            ImGui::TableSetColumnIndex(1); ImGui::SliderFloat("##fov", &currentScene.camera.fovDegrees, 20.0f, 160.0f, "%.1f deg");
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Render AABB");
-            ImGui::TableSetColumnIndex(1); ImGui::Checkbox("##aabb", &camera.props.shouldRenderAABB);
+            ImGui::TableSetColumnIndex(1); ImGui::Checkbox("##aabb", &currentScene.camera.props.shouldRenderAABB);
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0); ImGui::Text("Scene");
             ImGui::TableSetColumnIndex(1);
             if (ImGui::BeginCombo("##scene", currentScene.name.c_str())) {
-                std::string oldName = currentScene.name;
-                std::string newName = currentScene.name;
+                auto oldName = currentScene.name;
+                std::string newName = oldName;
                 for (const auto &[name, scene] : sceneManager.scenes) {
                     if (ImGui::Selectable(name.c_str(), oldName == name)) {
                         ImGui::SetItemDefaultFocus();
@@ -1502,7 +1565,6 @@ void VulkanEngine::run() {
 
                 if (oldName != newName) {
                     swap_scene(newName);
-                    std::cout << "INFO: Swapped scene to \"" << newName << '"' << std::endl;
                 }
                 ImGui::EndCombo();
             }
@@ -1530,7 +1592,7 @@ void VulkanEngine::run() {
 
         // --- Movement Calculations ---
         if (!ImGui::IsWindowFocused(ImGuiHoveredFlags_AnyWindow))
-            camera.calculateMovement(static_cast<float>(ticksMs - startTicksMs));
-        camera.calculateProperties();
+            currentScene.camera.calculateMovement(static_cast<float>(ticksMs - startTicksMs));
+        currentScene.camera.calculateProperties();
     }
 }
