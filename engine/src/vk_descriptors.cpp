@@ -185,6 +185,6 @@ namespace vkutil {
         for (auto &write : writes) write.setDstSet(*set);
 
         allocator->device->updateDescriptorSets(writes, {});
-        return std::make_unique<vkutil::Descriptor>(std::move(set), layout);
+        return std::make_unique<vkutil::Descriptor>(vkutil::Descriptor{std::move(set), layout});
     }
 }

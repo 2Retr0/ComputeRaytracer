@@ -34,7 +34,7 @@ public:
 
 public:
     Sphere(glm::vec3 center, float radius, GPUMaterial material) {
-        sphere = GPU_t(center, radius, material);
+        sphere = GPU_t{center, radius, material};
     }
 
     operator GPU_t() { // NOLINT
@@ -71,7 +71,7 @@ public:
 
 public:
     Quad(glm::vec3 corner, glm::vec3 u, glm::vec3 v, GPUMaterial material) {
-        quad = GPU_t(corner, PAD, u, PAD, v);
+        quad = GPU_t{corner, PAD, u, PAD, v};
 
         auto n = glm::cross(u, v);
         quad.normal = glm::normalize(n);
@@ -114,7 +114,7 @@ public:
 
 public:
     Tri(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::vec3 u, glm::vec3 v, GPUMaterial material) {
-        tri = GPU_t(v0, PAD, v1, PAD, v2, PAD, u, PAD, v, PAD, material);
+        tri = GPU_t{v0, PAD, v1, PAD, v2, PAD, u, PAD, v, PAD, material};
     }
 
     operator GPU_t() { // NOLINT
