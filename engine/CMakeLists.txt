@@ -19,6 +19,7 @@ set(LIBRARIES
         imgui::imgui
         vk-bootstrap::vk-bootstrap
         assetlib
+        raytracing
 )
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ${LIBRARIES})
 

@@ -36,8 +36,8 @@ namespace vkutil {
         auto setAllocateInfo = vk::DescriptorSetAllocateInfo(currentPool, 1, &layout);
         try {
             return std::move(device->allocateDescriptorSets(setAllocateInfo).front());
-        } catch (vk::OutOfPoolMemoryError &ignored) {
-        } catch (vk::FragmentedPoolError &ignored) {}
+        } catch (vk::OutOfPoolMemoryError &) {
+        } catch (vk::FragmentedPoolError &) {}
 
         // --- Pool Reallocation ---
         // Allocate a new pool and retry to allocate the descriptor set
@@ -71,13 +71,14 @@ namespace vkutil {
         int lastBinding = -1;
 
         //copy from the direct info struct into our own one
-        for (int i = 0; i < info->bindingCount; i++) {
+        for (uint32_t i = 0; i < info->bindingCount; i++) {
             auto binding = info->pBindings[i];
             layoutInfo.bindings.push_back(binding);
 
+            auto newBinding = static_cast<int>(binding.binding);
             // Check that the bindings are in strict increasing order
-            if (binding.binding > lastBinding)
-                lastBinding = static_cast<int>(binding.binding);
+            if (newBinding > lastBinding)
+                lastBinding = newBinding;
             else
                 isSorted = false;
         }
@@ -146,36 +147,12 @@ namespace vkutil {
 
 
 
-    DescriptorBuilder &DescriptorBuilder::bind_buffer(uint32_t binding, vk::DescriptorBufferInfo *bufferInfo, vk::DescriptorType type, vk::ShaderStageFlags stageFlags) {
-        if (bufferInfo != nullptr && bufferInfo->range == 0) {
-//            std::cerr << "WARN: vk::DescriptorBufferInfo::range must be non-zero!" << std::endl;
-            bufferInfo->range = 1;
-        }
-
-        // --- Descriptor Layout Binding Creation ---
-        auto newBinding = vk::DescriptorSetLayoutBinding(binding, type, 1, stageFlags);
-        bindings.push_back(newBinding);
-
-        // --- Descriptor Write Creation ---
-        // clang-format off
-        auto newWrite = vk::WriteDescriptorSet({}, binding)
-            .setDescriptorCount(1)
-            .setDescriptorType(type)
-            .setPBufferInfo(bufferInfo);
-        // clang-format on
-        writes.push_back(newWrite);
-        return *this;
-    }
-
-    DescriptorBuilder &DescriptorBuilder::bind_image(uint32_t binding, vk::DescriptorImageInfo *imageInfo, vk::DescriptorType type, vk::ShaderStageFlags stageFlags) {
-        this->bind_buffer(binding, {}, type, stageFlags);
-        writes.back().setPImageInfo(imageInfo);
-        return *this;
-    }
+//    template<typename T>
+//    DescriptorBuilder &DescriptorBuilder::bind(uint32_t binding, const std::vector<T> &infos, vk::DescriptorType type, vk::ShaderStageFlags stageFlags)
 
     std::unique_ptr<Descriptor> DescriptorBuilder::build() {
         // --- Build Layout ---
-        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo({}, bindings.size(), bindings.data());
+        auto layoutInfo = vk::DescriptorSetLayoutCreateInfo({}, (uint32_t) bindings.size(), bindings.data());
         auto layout = cache->create_descriptor_layout(&layoutInfo);
 
         // --- Allocate Descriptor ---

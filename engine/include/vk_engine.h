@@ -1,8 +1,6 @@
 ﻿#pragma once
 
-#include "../raytracing/bounding_volume_hierarchy.h"
-#include "../raytracing/primitives.h"
-#include "../raytracing/scene.h"
+#include "scene_manager.h"
 #include "vk_descriptors.h"
 #include "vk_mesh.h"
 #include "vk_types.h"
@@ -203,20 +201,14 @@ public:
 
     // --- Compute ---
     Texture computeTexture;
-//    vk::raii::Sampler computeSampler = nullptr;
     AllocatedBuffer computeParameterBuffer;
-    AllocatedBuffer computeBvhBuffer;
-    AllocatedBuffer sphereObjectBuffer;
-    AllocatedBuffer quadObjectBuffer;
-    AllocatedBuffer triObjectBuffer;
-//    Camera camera;
     SceneManager sceneManager;
     Scene currentScene;
     std::unordered_map<std::string, std::unique_ptr<vkutil::Descriptor>> descriptors;
     std::unordered_map<std::string, std::unique_ptr<vk::raii::ShaderModule>> shaderModules;
     bool shouldRecreateSwapchain {false};
-    vk::Viewport viewport;
-    vk::Rect2D scissor;
+//    vk::Viewport viewport;
+//    vk::Rect2D scissor;
 
 private:
     void init_vulkan();

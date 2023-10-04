@@ -2,11 +2,12 @@
 #include "vk_initializers.h"
 #include "vk_material.h"
 #include "vk_textures.h"
+#include "primitives.h"
 
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_vulkan.h>
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <SDL_vulkan.h>
 #include <vkBootstrap.h>
 #include <vulkan/vulkan_raii.hpp>
@@ -103,6 +104,7 @@ void VulkanEngine::init() {
 
     // Everything went fine!
     isInitialized = true;
+    std::cout << "INFO: Engine initialized--hopefully nothing went wrong!" << std::endl;
 }
 
 
@@ -233,8 +235,8 @@ void VulkanEngine::init_swapchain() {
 
     // --- Dynamic Viewport and Scissor ---
     std::cout << "   --- Creating dynamic viewport and scissor..." << std::endl;
-    viewport = vk::Viewport(0.0f, 0.0f, static_cast<float>(windowExtent.width), static_cast<float>(windowExtent.height), 0.0f, 1.0f);
-    scissor = vk::Rect2D(vk::Offset2D(0, 0), windowExtent);
+//    viewport = vk::Viewport(0.0f, 0.0f, static_cast<float>(windowExtent.width), static_cast<float>(windowExtent.height), 0.0f, 1.0f);
+//    scissor = vk::Rect2D(vk::Offset2D(0, 0), windowExtent);
 
     // --- Cleanup ---
 //    mainDeletionQueue.push([this]() {
@@ -455,15 +457,15 @@ void VulkanEngine::init_pipelines() {
     pipelineBuilder.inputAssembly = vkinit::input_assembly_create_info(vk::PrimitiveTopology::eTriangleList);
 
     // Build viewport and scissor from the swapchain extents.
-//    pipelineBuilder.viewport.x = 0.0f;
-//    pipelineBuilder.viewport.y = 0.0f;
-//    pipelineBuilder.viewport.width = static_cast<float>(windowExtent.width);
-//    pipelineBuilder.viewport.height = static_cast<float>(windowExtent.height);
-//    pipelineBuilder.viewport.minDepth = 0.0f;
-//    pipelineBuilder.viewport.maxDepth = 1.0f;
-//
-//    pipelineBuilder.scissor.offset = vk::Offset2D(0, 0);
-//    pipelineBuilder.scissor.extent = windowExtent;
+    pipelineBuilder.viewport.x = 0.0f;
+    pipelineBuilder.viewport.y = 0.0f;
+    pipelineBuilder.viewport.width = static_cast<float>(windowExtent.width);
+    pipelineBuilder.viewport.height = static_cast<float>(windowExtent.height);
+    pipelineBuilder.viewport.minDepth = 0.0f;
+    pipelineBuilder.viewport.maxDepth = 1.0f;
+
+    pipelineBuilder.scissor.offset = vk::Offset2D(0, 0);
+    pipelineBuilder.scissor.extent = windowExtent;
 
     // Configure the rasterizer to draw filled triangles.
     pipelineBuilder.rasterizer = vkinit::rasterization_state_create_info(vk::PolygonMode::eFill);
@@ -548,9 +550,9 @@ void VulkanEngine::init_pipelines() {
 
     // --- Compute Pipeline Layout ---
     std::cout << "   --- Creating compute pipeline..." << std::endl;
-    std::vector<vk::DescriptorSetLayout> layouts = { descriptors["compute"]->layout, };
+    std::vector<vk::DescriptorSetLayout> layouts = { descriptors["compute"]->layout, descriptors["resources"]->layout, };
     auto computePipelineLayoutInfo = vkinit::pipeline_layout_create_info();
-    computePipelineLayoutInfo.setLayoutCount = layouts.size();
+    computePipelineLayoutInfo.setLayoutCount = (uint32_t) layouts.size();
     computePipelineLayoutInfo.pSetLayouts = layouts.data();
 
     auto computePipelineLayout = vk::raii::PipelineLayout(device, computePipelineLayoutInfo);
@@ -593,10 +595,10 @@ void VulkanEngine::load_images() {
 //    loadedTextures["empire_diffuse"] = Texture(std::move(lostEmpire));
 
     auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
+
     auto fumoImage = vkutil::load_image_from_asset(*this, "../assets/cirno_low_u1_v1.tx");
     auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, fumoImage.image, vk::ImageAspectFlagBits::eColor);
-    auto fumo = Texture(fumoImage, {device, samplerInfo}, {device, fumoImageviewInfo});
-    loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
+    loadedTextures["fumo_diffuse"] = Texture(fumoImage, {device, samplerInfo}, {device, fumoImageviewInfo});
 
     auto earthImage = vkutil::load_image_from_asset(*this, "../assets/earthmap.tx");
     auto earthImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, earthImage.image, vk::ImageAspectFlagBits::eColor);
@@ -670,7 +672,7 @@ void VulkanEngine::upload_buffer(AllocatedBuffer &buffer, std::vector<T> &object
     // normally.
     for (uint32_t i = 0; i < objects.size(); i++) {
         if constexpr (std::is_same<T, std::any>::value)
-            objectSSBO[i] = std::any_cast<U>(objects[i]);
+            objectSSBO[i] = static_cast<std::any>(objects[i]).has_value() ? std::any_cast<U>(objects[i]) : U();
         else if constexpr (!std::is_same<T, U>::value)
             objectSSBO[i] = dynamic_cast<U>(objects[i]);
         else
@@ -694,7 +696,7 @@ void VulkanEngine::swap_scene(const std::string &sceneName) {
     std::cout << " +---------------------------------------------+" << std::endl;
 
     device.waitIdle();
-    currentScene = sceneManager.get_scene(sceneName);
+    currentScene = *sceneManager.get_scene(sceneName);
     sceneParameters.backgroundColor = currentScene.backgroundColor;
 
 //    for (uint32_t i = 0; i < currentScene.bvh.size(); i++) {
@@ -722,22 +724,29 @@ void VulkanEngine::swap_scene(const std::string &sceneName) {
         h0 = windowExtent.height; // NOLINT
     int x0, y0, x1, y1, w1, h1;
     SDL_GetWindowPosition(window, &x0, &y0);
-    SDL_Vulkan_GetDrawableSize(window, nullptr, &h1);
+    SDL_Vulkan_GetDrawableSize(window, &w1, &h1);
 
-    // Conform new window width to scene aspect ratio.
-    w1 = h1 * currentScene.camera.aspectRatio; // NOLINT
-    // Conform new window position to center of old window.
-    x1 = x0 + (w0 - w1) * 0.5f; // NOLINT
-    y1 = y0 + (h0 - h1) * 0.5f; // NOLINT
+    if (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) {
+        // Conform scene aspect ratio to window aspect ratio if maximized.
+        currentScene.camera.aspectRatio = (float) w1 / (float) h1;
+    } else {
+        // Conform new window width to scene aspect ratio.
+        w1 = static_cast<int>((float) h1 * currentScene.camera.aspectRatio);
+        // Conform new window position to center of old window.
+        x1 = x0 + static_cast<int>((float) (w0 - w1) * 0.5f);
+        y1 = y0 + static_cast<int>((float) (h0 - h1) * 0.5f);
 
-    SDL_SetWindowSize(window, w1, h1);
-    SDL_SetWindowPosition(window, x1, y1);
+        SDL_SetWindowSize(window, w1, h1);
+        SDL_SetWindowPosition(window, x1, y1);
+    }
+
     // Scene buffers need to be uploaded (thus, descriptor shape will change)
-    init_descriptors();
+    recreate_swapchain();
 }
 
 
 void VulkanEngine::init_scene() {
+    std::cout << "INFO: init_scene()" << std::endl;
 //    // We create 1 monkey, add it as the first thing to the renderables array, and then we create a lot of triangles in
 //    // a grid, and put them around the monkey.
 //    RenderObject monkey = {
@@ -813,7 +822,7 @@ void VulkanEngine::init_scene() {
 //    auto textureWrite2 = vkinit::write_descriptor_image(vk::DescriptorType::eCombinedImageSampler, *computeDescriptor, &earthImageInfo, 5);
 //    device.updateDescriptorSets({textureWrite2}, {});
 
-    sceneManager.init_scene({"book1", {{10, 1.5, 2}, {0, 0, -0.25}, 30.0f, 16.0 / 10.0}}, []() -> std::shared_ptr<BVHNode> {
+    sceneManager.init_scene({"book1", {{10, 1.5, 2}, {0, 0, -0.25}, 30.0f, 16.0f / 10.0f}}, []() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
         for (int a = -7; a < 7; a++) {
             for (int b = -7; b < 7; b++) {
@@ -823,59 +832,62 @@ void VulkanEngine::init_scene() {
                 if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
                     if (chooseMaterial < 0.8) {                       // diffuse
                         auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, 1.0f, MaterialType::lambertian)));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, Lambertian(albedo)));
                     } else if (chooseMaterial < 0.95) { // metal
                         auto albedo = rand(0.5, 1);
                         auto fuzz = rand(0, 0.5).x;
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, fuzz, MaterialType::metal)));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, Metal(albedo, fuzz)));
                     } else { // glass
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MaterialType::dielectric)));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, Dielectric(1.5f)));
                     }
                 }
             }
         }
 
         HittableList<Sphere> spheres;
-        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian))));
-        spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MaterialType::lambertian))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, Lambertian({0.5, 0.5, 0.5}))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, Lambertian("earth"))));
         // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
         // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
-        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, 1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric))));
-        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, -0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric))));
-        spheres.add(std::make_shared<Sphere>(Sphere({4, 1, 0}, 1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MaterialType::metal))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, 1.0f, Dielectric(1.5f))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, -0.9f, Dielectric(1.5f))));
+        spheres.add(std::make_shared<Sphere>(Sphere({4, 1, 0}, 1.0f, Metal({0.7, 0.6, 0.5}, 0.0f))));
         world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
 
-        return std::make_shared<BVHNode>(world, 0, world.size());
+        return std::make_shared<BVHNode>(world, 0, (int) world.size());
     });
 
     sceneManager.init_scene({"quads", {{0, 0, 9}, {0, 0, 0}, 80.0f, 1.0f, 0.0f}}, []() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
         HittableList<Quad> quads;
 
-        quads.add(std::make_shared<Quad>(Quad({-3, -2, 5}, {0, 0, -4}, {0, 4, 0}, GPUMaterial({1.0, 0.2, 0.2}, 0.0f, MaterialType::lambertian))));
-        quads.add(std::make_shared<Quad>(Quad({-2, -2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial({0.2, 1.0, 0.2}, 0.0f, MaterialType::lambertian))));
-        quads.add(std::make_shared<Quad>(Quad({3, -2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial({0.2, 0.2, 1.0}, 0.0f, MaterialType::lambertian))));
-        quads.add(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial({1.0, 0.5, 0.0}, 0.0f, MaterialType::lambertian))));
-        quads.add(std::make_shared<Quad>(Quad({-2, -3, 5}, {4, 0, 0}, {0, 0, -4}, GPUMaterial({0.2, 0.8, 0.8}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({-3, -2, 5}, {0, 0, -4}, {0, 4, 0}, Lambertian({1.0, 0.2, 0.2}))));
+        quads.add(std::make_shared<Quad>(Quad({-2, -2, 0}, {4, 0, 0}, {0, 4, 0}, Lambertian({0.2, 1.0, 0.2}))));
+        quads.add(std::make_shared<Quad>(Quad({3, -2, 1}, {0, 0, 4}, {0, 4, 0}, Lambertian({0.2, 0.2, 1.0}))));
+        quads.add(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, Lambertian({1.0, 0.5, 0.0}))));
+        quads.add(std::make_shared<Quad>(Quad({-2, -3, 5}, {4, 0, 0}, {0, 0, -4}, Lambertian({0.2, 0.8, 0.8}))));
         world.push_back(std::make_shared<HittableList<Quad>>(quads));
 
-        return std::make_shared<BVHNode>(world, 0, world.size());
+        return std::make_shared<BVHNode>(world, 0, (int) world.size());
     });
 
     sceneManager.init_scene({"corne", {{1, 1, -2.878}, {1, 1, 0}, 40.0f, 1.0f, 0.0f}, glm::vec3(0.0)}, []() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
 
-        world.push_back(std::make_shared<Quad>(Quad({2, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.12, 0.45, 0.15}, 0.0f, MaterialType::lambertian))));
-        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.65, 0.05, 0.05}, 0.0f, MaterialType::lambertian))));
-        world.push_back(std::make_shared<Quad>(Quad({1.234, 1.993, 1.194}, {-0.468, 0, 0}, {0, 0, -0.378}, GPUMaterial({15, 15, 15}, 0.0f, MaterialType::diffuseLight))));
-        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {2, 0, 0}, {0, 0, 2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
-        world.push_back(std::make_shared<Quad>(Quad({2, 2, 2}, {-2, 0, 0}, {0, 0, -2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
-        world.push_back(std::make_shared<Quad>(Quad({0, 0, 2}, {2, 0, 0}, {0, 2, 0}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({2, 0, 0}, {0, 2, 0}, {0, 0, 2}, Lambertian({0.12, 0.45, 0.15}))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {0, 2, 0}, {0, 0, 2}, Lambertian({0.65, 0.05, 0.05}))));
+        world.push_back(std::make_shared<Quad>(Quad({1.234, 1.993, 1.194}, {-0.468, 0, 0}, {0, 0, -0.378}, DiffuseLight({15, 15, 15}))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {2, 0, 0}, {0, 0, 2}, Lambertian({0.73, 0.73, 0.73}))));
+        world.push_back(std::make_shared<Quad>(Quad({2, 2, 2}, {-2, 0, 0}, {0, 0, -2}, Lambertian({0.73, 0.73, 0.73}))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 2}, {2, 0, 0}, {0, 2, 0}, Lambertian({0.73, 0.73, 0.73}))));
 
-        return std::make_shared<BVHNode>(world, 0, world.size());
+        world.push_back(std::make_shared<Box>(Box({0.468, 0, 0.234}, {1.063, 0.595, 0.829}, Lambertian({0.73, 0.73, 0.73}))));
+        world.push_back(std::make_shared<Box>(Box({0.955, 0, 1.063}, {1.550, 1.189, 1.658}, Lambertian({0.73, 0.73, 0.73}))));
+
+        return std::make_shared<BVHNode>(world, 0, (int) world.size());
     });
 
-    sceneManager.init_scene({"cirno", {{0, 2, 5}, {0, 1, 0}, 80.0f, 16.0 / 10.0, 0.0f}}, [&]() -> std::shared_ptr<BVHNode> {
+    sceneManager.init_scene({"cirno", {{0, 2, 5}, {0, 1, 0}, 80.0f, 16.0f / 10.0f, 0.0f}}, [&]() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
 
         auto *fumoMesh = &meshes["fumo"];
@@ -884,7 +896,7 @@ void VulkanEngine::init_scene() {
             modelCenter += vertex.position;
         }
         modelCenter /= fumoMesh->vertices.size();
-        std::cout << "INFO: cirno center: (" << modelCenter.x << ", " << modelCenter.y << ", " << modelCenter.z << ')' << std::endl;
+        std::cout << "   --- Cirno center: (" << modelCenter.x << ", " << modelCenter.y << ", " << modelCenter.z << ')' << std::endl;
 
         auto &vertices = fumoMesh->vertices;
         auto &indices = fumoMesh->indices;
@@ -897,26 +909,28 @@ void VulkanEngine::init_scene() {
             auto v = glm::vec3(v0.uv[1], v1.uv[1], v2.uv[1]);
 
             world.push_back(std::make_shared<Tri>(
-                Tri(v0.position - glm::vec3(0, 0.08, 0), v1.position - glm::vec3(0, 0.08, 0), v2.position - glm::vec3(0, 0.08, 0), u, v, {{0, 1, 1}, 0.0, MaterialType::lambertian})));
+                v0.position - glm::vec3(0, 0.08, 0),
+                v1.position - glm::vec3(0, 0.08, 0),
+                v2.position - glm::vec3(0, 0.08, 0),
+                u, v, Lambertian("fumo_diffuse")));
         }
 
         HittableList<Sphere> spheres;
-        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian))));
-        spheres.add(std::make_shared<Sphere>(Sphere({-4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MaterialType::metal))));
-        spheres.add(std::make_shared<Sphere>(Sphere({4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MaterialType::metal))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, Lambertian({0.5, 0.5, 0.5}))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 2, 0}, 2.0f, Metal({0.7, 0.6, 0.5}, 0.05f))));
+        spheres.add(std::make_shared<Sphere>(Sphere({4, 2, 0}, 2.0f, Metal({0.7, 0.6, 0.5}, 0.05f))));
 
         world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
 
-        return std::make_shared<BVHNode>(world, 0, world.size());
+        return std::make_shared<BVHNode>(world, 0, (int) world.size());
     });
 
-    currentScene = sceneManager.get_scene("cirno");
+    currentScene = *sceneManager.get_scene("book1");
     sceneParameters.backgroundColor = currentScene.backgroundColor;
 
-    int width  = windowExtent.height * currentScene.camera.aspectRatio; // NOLINT
+    int width  = static_cast<int>((float) windowExtent.height * currentScene.camera.aspectRatio);
     int height = windowExtent.height; // NOLINT
     SDL_SetWindowSize(window, width, height);
-//    swap_scene("cirno");
 }
 
 
@@ -940,7 +954,7 @@ void VulkanEngine::init_imgui() {
     auto poolInfo = vk::DescriptorPoolCreateInfo()
                         .setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
                         .setMaxSets(1000)
-                        .setPoolSizeCount(static_cast<uint32_t>(std::size(poolSizes)))
+                        .setPoolSizeCount((uint32_t) (std::size(poolSizes)))
                         .setPPoolSizes(poolSizes);
 
     imguiPool = vk::raii::DescriptorPool(device, poolInfo);
@@ -996,7 +1010,7 @@ Mesh *VulkanEngine::get_mesh(const std::string &name) {
 
 
 void VulkanEngine::draw_objects(const vk::raii::CommandBuffer &commandBuffer, RenderObject *first, uint32_t count) {
-//    const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData)));
+//    const auto FRAME_OFFSET = (uint32_t) (pad_uniform_buffer_size(sizeof(GPUCameraData) + sizeof(GPUSceneData)));
 //
 //    auto &currentFrame = get_current_frame();
 //    // --- Writing Camera Data (View) ---
@@ -1116,7 +1130,7 @@ void VulkanEngine::init_descriptors() {
 //        {vk::DescriptorType::eStorageImage, 10},
 //    };
 //
-//    auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, static_cast<uint32_t>(sizes.size()), sizes.data());
+//    auto descriptorPoolInfo = vk::DescriptorPoolCreateInfo({}, 10, (uint32_t) (sizes.size()), sizes.data());
 //    descriptorPool = vk::raii::DescriptorPool(device, descriptorPoolInfo);
 //
 //    // --- Descriptor Set Layouts ---
@@ -1147,64 +1161,79 @@ void VulkanEngine::init_descriptors() {
         auto computeImageAllocationInfo = vma::AllocationCreateInfo()
             .setUsage(vma::MemoryUsage::eGpuOnly)
             .setRequiredFlags(vk::MemoryPropertyFlagBits::eDeviceLocal);
-
+        // clang-format on
         auto computeImage = static_cast<AllocatedImage>(allocator->createImage(computeImageInfo, computeImageAllocationInfo));
         auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
         auto computeViewInfo = vkinit::imageview_create_info(imageFormat, computeImage.image, vk::ImageAspectFlagBits::eColor);
         computeTexture = Texture(computeImage, {device, samplerInfo}, {device, computeViewInfo});
-        // clang-format on
-
-        auto spheres = currentScene.get_buffer(Hittable::Type::sphere);
-        auto quads = currentScene.get_buffer(Hittable::Type::quad);
-        auto tris = currentScene.get_buffer(Hittable::Type::tri);
+        auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeTexture.sampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
 
         std::cout << "   --- Allocating GPU SSBOs..." << std::endl;
         // Compute camera
         computeParameterBuffer = create_buffer(SCENE_BUFFER_SIZE, vk::BufferUsageFlagBits::eUniformBuffer, vma::MemoryUsage::eCpuToGpu);
+        auto computeCameraBufferInfo = vk::DescriptorBufferInfo(computeParameterBuffer.buffer, 0, sizeof(GPUSceneData));
 
-        computeBvhBuffer = create_buffer(sizeof(BVHNode::GPU_t) * currentScene.bvh.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        sphereObjectBuffer = create_buffer(sizeof(Sphere::GPU_t) * spheres.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        quadObjectBuffer = create_buffer(sizeof(Quad::GPU_t) * quads.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
-        triObjectBuffer = create_buffer(sizeof(Tri::GPU_t) * tris.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        // Object buffers
+        auto bvh = currentScene.get_buffer(Hittable::Type::bvhNode);
+        auto computeBvhBuffer = create_buffer(sizeof(BVHNode::GPU_t) * bvh.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, sizeof(BVHNode::GPU_t) * bvh.size());
+        upload_buffer<std::any, BVHNode::GPU_t>(computeBvhBuffer, bvh);
+
+        auto spheres = currentScene.get_buffer(Hittable::Type::sphere);
+        auto sphereObjectBuffer = create_buffer(sizeof(Sphere::GPU_t) * spheres.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto sphereBufferInfo = vk::DescriptorBufferInfo(sphereObjectBuffer.buffer, 0, sizeof(Sphere::GPU_t) * spheres.size());
+        upload_buffer<std::any, Sphere::GPU_t>(sphereObjectBuffer, spheres);
+
+        auto quads = currentScene.get_buffer(Hittable::Type::quad);
+        auto quadObjectBuffer = create_buffer(sizeof(Quad::GPU_t) * quads.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto quadBufferInfo = vk::DescriptorBufferInfo(quadObjectBuffer.buffer, 0, sizeof(Quad::GPU_t) * quads.size());
+        upload_buffer<std::any, Quad::GPU_t>(quadObjectBuffer, quads);
+
+        auto tris = currentScene.get_buffer(Hittable::Type::tri);
+        auto triObjectBuffer = create_buffer(sizeof(Tri::GPU_t) * tris.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto triBufferInfo = vk::DescriptorBufferInfo(triObjectBuffer.buffer, 0, sizeof(Tri::GPU_t) * tris.size());
+        upload_buffer<std::any, Tri::GPU_t>(triObjectBuffer, tris);
 
         std::cout << "   --- Creating compute descriptor..." << std::endl;
-        auto computeCameraBufferInfo = vk::DescriptorBufferInfo(computeParameterBuffer.buffer, 0, sizeof(GPUSceneData));
-        auto computeTextureBufferInfo = vk::DescriptorImageInfo(*computeTexture.sampler, *computeTexture.imageView, vk::ImageLayout::eGeneral);
-        auto fumoTextureBufferInfo = vk::DescriptorImageInfo(*loadedTextures["fumo_diffuse"].sampler, *loadedTextures["fumo_diffuse"].imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-
-        // Compute BVH
-        auto bvhBufferInfo = vk::DescriptorBufferInfo(computeBvhBuffer.buffer, 0, sizeof(BVHNode::GPU_t) * currentScene.bvh.size());
-
-        // Compute objects
-        auto sphereBufferInfo = vk::DescriptorBufferInfo(sphereObjectBuffer.buffer, 0, sizeof(Sphere::GPU_t) * spheres.size());
-        auto quadBufferInfo = vk::DescriptorBufferInfo(quadObjectBuffer.buffer, 0, sizeof(Quad::GPU_t) * quads.size());
-        auto triBufferInfo = vk::DescriptorBufferInfo(triObjectBuffer.buffer, 0, sizeof(Tri::GPU_t) * tris.size());
-
         // clang-format off
         descriptors["compute"] = vkutil::DescriptorBuilder::begin(&layoutCache, &descriptorAllocator)
-            .bind_image( 0, &computeTextureBufferInfo, vk::DescriptorType::eStorageImage,         vk::ShaderStageFlagBits::eCompute)
-            .bind_buffer(1, &computeCameraBufferInfo,  vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute)
-            .bind_buffer(2, &bvhBufferInfo,            vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
-            .bind_buffer(3, &sphereBufferInfo,         vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
-            .bind_buffer(4, &quadBufferInfo,           vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
-            .bind_image( 5, &fumoTextureBufferInfo,    vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute)
-            .bind_buffer(6, &triBufferInfo,            vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
-            .build();
-
-        std::cout << "   --- Creating graphic descriptor..." << std::endl;
-        descriptors["graphics"] = vkutil::DescriptorBuilder::begin(&layoutCache, &descriptorAllocator)
-            .bind_image(0, &computeTextureBufferInfo, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .bind(0, &computeTextureBufferInfo, vk::DescriptorType::eStorageImage,         vk::ShaderStageFlagBits::eCompute)
+            .bind(1, &computeCameraBufferInfo,  vk::DescriptorType::eUniformBufferDynamic, vk::ShaderStageFlagBits::eCompute)
+            .bind(2, &bvhBufferInfo,            vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
+            .bind(3, &sphereBufferInfo,         vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
+            .bind(4, &quadBufferInfo,           vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
+            .bind(5, &triBufferInfo,            vk::DescriptorType::eStorageBuffer,        vk::ShaderStageFlagBits::eCompute)
             .build();
         // clang-format on
 
-//        auto spheres = currentScene.get_buffer(Hittable::Type::sphere);
-//        auto quads = currentScene.get_buffer(Hittable::Type::quad);
-//        auto tris = currentScene.get_buffer(Hittable::Type::tri);
+        std::cout << "   --- Creating resources descriptor..." << std::endl;
+        auto materialBuffer = create_buffer(sizeof(RTMaterial::GPU_t) * currentScene.materials.size(), vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vma::MemoryUsage::eGpuOnly);
+        auto materialBufferInfo = vk::DescriptorBufferInfo(materialBuffer.buffer, 0, sizeof(RTMaterial::GPU_t) * currentScene.materials.size());
+        auto materialUploadBuffer = std::vector<RTMaterial::GPU_t>(currentScene.materials.size());
+        for (auto &[material, id] : currentScene.materials) {
+            materialUploadBuffer[id] = material;
+        }
+        upload_buffer(materialBuffer, materialUploadBuffer);
 
-        upload_buffer<std::any, Sphere::GPU_t>(sphereObjectBuffer, spheres);
-        upload_buffer<std::any, Quad::GPU_t>(quadObjectBuffer, quads);
-        upload_buffer<std::any, Tri::GPU_t>(triObjectBuffer, tris);
-        upload_buffer(computeBvhBuffer, currentScene.bvh);
+        auto textureInfos = std::vector<vk::DescriptorImageInfo>(currentScene.textures.size());
+        for (auto &[textureName, id] : currentScene.textures) {
+            auto &texture = loadedTextures[textureName];
+            textureInfos[id] = vk::DescriptorImageInfo(*texture.sampler, *texture.imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
+        }
+        // Add 'dummy' image if there are no textures to upload.
+        if (textureInfos.empty()) textureInfos.push_back(computeTextureBufferInfo);
+
+        descriptors["resources"] = vkutil::DescriptorBuilder::begin(&layoutCache, &descriptorAllocator)
+            .bind(0, &materialBufferInfo, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
+            .bind(1, textureInfos.data(), vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute, textureInfos.size())
+            .build();
+
+        std::cout << "   --- Creating graphic descriptor..." << std::endl;
+        // clang-format off
+        descriptors["graphics"] = vkutil::DescriptorBuilder::begin(&layoutCache, &descriptorAllocator)
+            .bind(0, &computeTextureBufferInfo, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment)
+            .build();
+        // clang-format on
     }
 
 //    // --- Descriptor/Buffer Allocation ---
@@ -1250,10 +1279,7 @@ void VulkanEngine::init_descriptors() {
 }
 
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "ConstantParameter"
 size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize) const {
-#pragma clang diagnostic pop
     // Calculate the required alignment based on minimum device-offset alignment
     size_t minOffsetAlignment = gpuProperties.limits.minUniformBufferOffsetAlignment;
     size_t alignedSize = originalSize;
@@ -1318,7 +1344,8 @@ void VulkanEngine::recreate_swapchain() {
     // --- Recreate Swapchain ---
     init_swapchain();
     init_framebuffers();
-    if (w0 != w1 || h0 != h1) init_descriptors();
+    init_descriptors();
+    init_pipelines();
 
     shouldRecreateSwapchain = false;
 }
@@ -1354,7 +1381,7 @@ void VulkanEngine::draw() {
     uint32_t swapchainImageIndex;
     try {
         swapchainImageIndex = swapchain.acquireNextImage((uint64_t) 1E9, *currentFrame.presentSemaphore, VK_NULL_HANDLE).second;
-    } catch (vk::OutOfDateKHRError &error) {
+    } catch (vk::OutOfDateKHRError &) {
         recreate_swapchain();
     }
 
@@ -1379,7 +1406,7 @@ void VulkanEngine::draw() {
     vk::ClearValue clearValues[] = {clearValue, depthClear};
 
     {
-        const auto FRAME_OFFSET = static_cast<uint32_t>(pad_uniform_buffer_size(sizeof(GPUSceneData)));
+        const auto FRAME_OFFSET = (uint32_t) (pad_uniform_buffer_size(sizeof(GPUSceneData)));
 
         // --- Writing Scene Data ---
         currentScene.camera.props.seed = static_cast<float>(rand()) / 1E3f; // NOLINT
@@ -1404,7 +1431,7 @@ void VulkanEngine::draw() {
         commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, {imageMemoryBarrier});
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computeMaterial->pipeline);
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, *descriptors["compute"]->set, uniformOffset);
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 0, *descriptors["compute"]->set, uniformOffset);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *computeMaterial->pipelineLayout, 1, *descriptors["resources"]->set, {});
         commandBuffer.dispatch(windowExtent.width / 8, windowExtent.height / 8, 1);
 
         imageMemoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
@@ -1425,8 +1452,8 @@ void VulkanEngine::draw() {
         commandBuffer.beginRenderPass(renderpassInfo, vk::SubpassContents::eInline);
 
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipeline);
-        commandBuffer.setViewport(0, viewport);
-        commandBuffer.setScissor(0, scissor);
+//        commandBuffer.setViewport(0, viewport);
+//        commandBuffer.setScissor(0, scissor);
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *graphicsMaterial->pipelineLayout, 0, {*descriptors["graphics"]->set}, {});
         commandBuffer.draw(3, 1, 0, 0);
     }
@@ -1464,7 +1491,7 @@ void VulkanEngine::draw() {
     try {
         if (graphicsQueue.presentKHR(presentInfo) == vk::Result::eSuboptimalKHR)
             recreate_swapchain();
-    } catch(vk::OutOfDateKHRError &error) {
+    } catch(vk::OutOfDateKHRError &) {
         recreate_swapchain();
     }
     frameNumber++;

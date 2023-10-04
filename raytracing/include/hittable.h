@@ -1,37 +1,36 @@
 #pragma once
 
+#include "axis_aligned_bounding_box.h"
+#include "scene.h"
+
 #include <algorithm>
+#include <any>
 #include <iostream>
 #include <memory>
-#include <any>
 
 class Hittable {
 public:
-    enum Type {
+    enum Type : uint32_t {
         sphere  = 1,
         quad    = 2,
         tri     = 4,
-        nonLeaf = 8,
+        bvhNode = 8,
     };
 
     [[nodiscard]] virtual AABB bounding_box() const = 0;
 
-    [[nodiscard]] virtual std::vector<std::any> gpu_serialize() const = 0;
-
     [[nodiscard]] virtual Type type() const = 0;
+
+    virtual void gpu_serialize(Scene &scene) = 0;
 };
 
-template<typename T, std::enable_if<std::is_base_of<Hittable, T>::value>::type* = nullptr>
+template<typename T> requires std::is_base_of_v<Hittable, T>
 class HittableList : public Hittable {
 public:
     HittableList() = default;
 
     explicit HittableList(const std::shared_ptr<T> &object) {
         add(object);
-    }
-
-    void clear() {
-        objects.clear();
     }
 
     void add(const std::shared_ptr<T> &object) {
@@ -43,17 +42,13 @@ public:
         return aabb;
     }
 
-    [[nodiscard]] std::vector<std::any> gpu_serialize() const override {
-        std::vector<std::any> buffer;
-        for (const auto &object : objects) {
-            auto serialized = object->gpu_serialize();
-            buffer.insert(buffer.end(), serialized.begin(), serialized.end());
-        }
-        return buffer;
+    void gpu_serialize(Scene &scene) override {
+        for (const auto &object : objects)
+            object->gpu_serialize(scene);
     }
 
     [[nodiscard]] Type type() const override {
-        return objects.empty() ? Hittable::Type::nonLeaf : objects.front()->type();
+        return objects.empty() ? throw std::runtime_error("ERROR: Cannot serialize an empty HittableList!") : objects.front()->type();
     }
 
 public:

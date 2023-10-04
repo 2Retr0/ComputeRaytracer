@@ -3,6 +3,7 @@
 #include "vulkan/vulkan.hpp"
 #include "vulkan/vulkan_raii.hpp"
 
+#include <iostream>
 #include <unordered_map>
 #include <utility>
 
@@ -58,7 +59,7 @@ namespace vkutil {
 
             bool operator==(const DescriptorLayoutInfo &other) const;
 
-            [[nodiscard]] size_t hash() const;
+            [[nodiscard]] uint64_t hash() const;
         };
 
         DescriptorLayoutCache() = default;
@@ -71,7 +72,7 @@ namespace vkutil {
 
     private:
         struct DescriptorLayoutHash {
-            std::size_t operator()(const DescriptorLayoutInfo &info) const {
+            uint64_t operator()(const DescriptorLayoutInfo &info) const {
                 return info.hash();
             }
         };
@@ -84,8 +85,35 @@ namespace vkutil {
     public:
         static DescriptorBuilder begin(DescriptorLayoutCache *layoutCache, DescriptorAllocator *allocator);
 
-        DescriptorBuilder &bind_buffer(uint32_t binding, vk::DescriptorBufferInfo *bufferInfo, vk::DescriptorType type, vk::ShaderStageFlags stageFlags);
-        DescriptorBuilder &bind_image(uint32_t binding, vk::DescriptorImageInfo *imageInfo, vk::DescriptorType type, vk::ShaderStageFlags stageFlags);
+        template<typename T> requires std::is_same_v<T, vk::DescriptorImageInfo> || std::is_same_v<T, vk::DescriptorBufferInfo>
+        DescriptorBuilder &bind(uint32_t binding, T *infos, vk::DescriptorType type, vk::ShaderStageFlags stageFlags, size_t numInfos=1) {
+            if constexpr (std::is_same_v<T, vk::DescriptorBufferInfo>) {
+                for (int i = 0; i < numInfos; i++) {
+                    if (infos[i].range == 0) {
+//                        std::cerr << "WARN: vk::DescriptorBufferInfo::range must be non-zero!" << std::endl;
+                        infos[i].range = 1;
+                    }
+                }
+            }
+
+            // --- Descriptor Layout Binding Creation ---
+            auto newBinding = vk::DescriptorSetLayoutBinding(binding, type, (uint32_t) numInfos, stageFlags);
+            bindings.push_back(newBinding);
+
+            // --- Descriptor Write Creation ---
+            // clang-format off
+            auto newWrite = vk::WriteDescriptorSet({}, binding)
+                .setDescriptorCount((uint32_t) numInfos)
+                .setDescriptorType(type);
+            // clang-format on
+            if constexpr (std::is_same_v<T, vk::DescriptorBufferInfo>)
+                newWrite.setPBufferInfo(infos);
+            else if constexpr (std::is_same_v<T, vk::DescriptorImageInfo>)
+                newWrite.setPImageInfo(infos);
+
+            writes.push_back(newWrite);
+            return *this;
+        }
 
         //    bool build(vk::raii::DescriptorSet &set, vk::DescriptorSetLayout &layout);
         std::unique_ptr<Descriptor> build();

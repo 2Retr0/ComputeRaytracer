@@ -19,6 +19,7 @@ endforeach ()
 
 add_subdirectory(asset-baker)
 add_subdirectory(asset-lib)
+add_subdirectory(raytracing)
 add_subdirectory(engine)
 
 # Find all the shader files under the shaders folder

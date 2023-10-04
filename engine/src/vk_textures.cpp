@@ -66,7 +66,7 @@ AllocatedImage vkutil::load_image_from_asset(VulkanEngine &engine, const std::st
     // Copy the data to the buffer
     void *textureData;
     textureData = engine.allocator->mapMemory(stagingBuffer.allocation);
-    assets::unpack_texture(&textureInfo, file.binaryBlob.data(), file.binaryBlob.size(), (char *) textureData);
+    assets::unpack_texture(&textureInfo, file.binaryBlob.data(), (int) file.binaryBlob.size(), (char *) textureData);
     engine.allocator->unmapMemory(stagingBuffer.allocation);
 
     auto outImage = upload_image(textureInfo.pixelSize[0], textureInfo.pixelSize[1], imageFormat, engine, stagingBuffer);
@@ -78,7 +78,7 @@ AllocatedImage vkutil::load_image_from_asset(VulkanEngine &engine, const std::st
 }
 
 
-AllocatedImage vkutil::upload_image(int width, int height, vk::Format imageFormat, VulkanEngine &engine, AllocatedBuffer &stagingBuffer) {
+AllocatedImage vkutil::upload_image(uint32_t width, uint32_t height, vk::Format imageFormat, VulkanEngine &engine, AllocatedBuffer &stagingBuffer) {
     // --- Image Creation ---
     // Similar format to creating depth images, except we use the sampled and transfer destination usage flags since
     // the image will be used as a texture in shaders.

@@ -19,15 +19,15 @@ bool assets::save_binaryfile(const char *path, const assets::AssetFile &file) {
     uint32_t version = file.version;
     outfile.write((const char *) &version, sizeof(uint32_t));
 
-    uint32_t length = file.json.size();
+    auto length = (uint32_t) file.json.size();
     outfile.write((const char *) &length, sizeof(uint32_t));
 
-    uint32_t blobLength = file.binaryBlob.size();
+    auto blobLength = (uint32_t) file.binaryBlob.size();
     outfile.write((const char *) &blobLength, sizeof(uint32_t));
 
     outfile.write(file.json.data(), length);
 
-    outfile.write(file.binaryBlob.data(), file.binaryBlob.size());
+    outfile.write(file.binaryBlob.data(), blobLength);
 
     outfile.close();
     return true;
