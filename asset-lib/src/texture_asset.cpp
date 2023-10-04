@@ -3,7 +3,7 @@
 #include <lz4.h>
 #include <nlohmann/json.hpp>
 
-static assets::TextureFormat parse_format(const char *file) {
+assets::TextureFormat parse_format(const char *file) {
     if (strcmp(file, "RGBA8") == 0)
         return assets::TextureFormat::RGBA8;
     return assets::TextureFormat::Unknown;

@@ -589,18 +589,18 @@ void VulkanEngine::load_images() {
     std::cout << "INFO: load_images()" << std::endl;
 //    auto lostEmpireImage = vkutil::load_image_from_asset(*this, "../assets/lost_empire-RGBA.tx");
 //    auto imageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, lostEmpireImage.image, vk::ImageAspectFlagBits::eColor);
-//    auto lostEmpire = Texture{lostEmpireImage, vk::raii::ImageView(device, imageviewInfo)};
-//    loadedTextures["empire_diffuse"] = Texture{std::move(lostEmpire)};
+//    auto lostEmpire = Texture(lostEmpireImage, vk::raii::ImageView(device, imageviewInfo));
+//    loadedTextures["empire_diffuse"] = Texture(std::move(lostEmpire));
 
     auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
     auto fumoImage = vkutil::load_image_from_asset(*this, "../assets/cirno_low_u1_v1.tx");
     auto fumoImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, fumoImage.image, vk::ImageAspectFlagBits::eColor);
-    auto fumo = Texture{fumoImage, {device, samplerInfo}, {device, fumoImageviewInfo}};
-    loadedTextures["fumo_diffuse"] = Texture{std::move(fumo)};
+    auto fumo = Texture(fumoImage, {device, samplerInfo}, {device, fumoImageviewInfo});
+    loadedTextures["fumo_diffuse"] = Texture(std::move(fumo));
 
     auto earthImage = vkutil::load_image_from_asset(*this, "../assets/earthmap.tx");
     auto earthImageviewInfo = vkinit::imageview_create_info(vk::Format::eR8G8B8A8Unorm, earthImage.image, vk::ImageAspectFlagBits::eColor);
-    loadedTextures["earth"] = Texture{earthImage, {device, samplerInfo}, {device, earthImageviewInfo}};
+    loadedTextures["earth"] = Texture(earthImage, {device, samplerInfo}, {device, earthImageviewInfo});
 }
 
 
@@ -823,26 +823,26 @@ void VulkanEngine::init_scene() {
                 if ((center - glm::vec3(4, 0.2, 0)).length() > 0.9) { // NOLINT
                     if (chooseMaterial < 0.8) {                       // diffuse
                         auto albedo = rand(0.0f, 1.0) * rand(0.0f, 1.0);
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial{albedo, 1.0f, MaterialType::lambertian}));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, 1.0f, MaterialType::lambertian)));
                     } else if (chooseMaterial < 0.95) { // metal
                         auto albedo = rand(0.5, 1);
                         auto fuzz = rand(0, 0.5).x;
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial{albedo, fuzz, MaterialType::metal}));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial(albedo, fuzz, MaterialType::metal)));
                     } else { // glass
-                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial{{0, 0, 0}, 1.5f, MaterialType::dielectric}));
+                        world.push_back(std::make_shared<Sphere>(center, 0.2f, GPUMaterial({0, 0, 0}, 1.5f, MaterialType::dielectric)));
                     }
                 }
             }
         }
 
         HittableList<Sphere> spheres;
-        spheres.add(std::make_shared<Sphere>(Sphere{{0, -2000, 0}, 2000.0f, GPUMaterial{{0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian}}));
-        spheres.add(std::make_shared<Sphere>(Sphere{{-4, 1, 0}, 1.0f, GPUMaterial{{0.4, 0.2, 0.1}, 0.0f, MaterialType::lambertian}}));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 1, 0}, 1.0f, GPUMaterial({0.4, 0.2, 0.1}, 0.0f, MaterialType::lambertian))));
         // An interesting and easy trick with dielectric spheres is to note that if you use a negative radius, the geometry
         // is unaffected, but the surface normal points inward. This can be used as a bubble to make a hollow glass sphere:
-        spheres.add(std::make_shared<Sphere>(Sphere{{0, 1, 0}, 1.0f, GPUMaterial{{0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric}}));
-        spheres.add(std::make_shared<Sphere>(Sphere{{0, 1, 0}, -0.9f, GPUMaterial{{0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric}}));
-        spheres.add(std::make_shared<Sphere>(Sphere{{4, 1, 0}, 1.0f, GPUMaterial{{0.7, 0.6, 0.5}, 0.0f, MaterialType::metal}}));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, 1.0f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric))));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, 1, 0}, -0.9f, GPUMaterial({0.8, 0.8, 0.8}, 1.5f, MaterialType::dielectric))));
+        spheres.add(std::make_shared<Sphere>(Sphere({4, 1, 0}, 1.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.0f, MaterialType::metal))));
         world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
 
         return std::make_shared<BVHNode>(world, 0, world.size());
@@ -852,11 +852,11 @@ void VulkanEngine::init_scene() {
         std::vector<std::shared_ptr<Hittable>> world;
         HittableList<Quad> quads;
 
-        quads.add(std::make_shared<Quad>(Quad{{-3, -2, 5}, {0, 0, -4}, {0, 4, 0}, GPUMaterial{{1.0, 0.2, 0.2}, 0.0f, MaterialType::lambertian}}));
-        quads.add(std::make_shared<Quad>(Quad{{-2, -2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial{{0.2, 1.0, 0.2}, 0.0f, MaterialType::lambertian}}));
-        quads.add(std::make_shared<Quad>(Quad{{3, -2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial{{0.2, 0.2, 1.0}, 0.0f, MaterialType::lambertian}}));
-        quads.add(std::make_shared<Quad>(Quad{{-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial{{1.0, 0.5, 0.0}, 0.0f, MaterialType::lambertian}}));
-        quads.add(std::make_shared<Quad>(Quad{{-2, -3, 5}, {4, 0, 0}, {0, 0, -4}, GPUMaterial{{0.2, 0.8, 0.8}, 0.0f, MaterialType::lambertian}}));
+        quads.add(std::make_shared<Quad>(Quad({-3, -2, 5}, {0, 0, -4}, {0, 4, 0}, GPUMaterial({1.0, 0.2, 0.2}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({-2, -2, 0}, {4, 0, 0}, {0, 4, 0}, GPUMaterial({0.2, 1.0, 0.2}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({3, -2, 1}, {0, 0, 4}, {0, 4, 0}, GPUMaterial({0.2, 0.2, 1.0}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({-2, 3, 1}, {4, 0, 0}, {0, 0, 4}, GPUMaterial({1.0, 0.5, 0.0}, 0.0f, MaterialType::lambertian))));
+        quads.add(std::make_shared<Quad>(Quad({-2, -3, 5}, {4, 0, 0}, {0, 0, -4}, GPUMaterial({0.2, 0.8, 0.8}, 0.0f, MaterialType::lambertian))));
         world.push_back(std::make_shared<HittableList<Quad>>(quads));
 
         return std::make_shared<BVHNode>(world, 0, world.size());
@@ -865,12 +865,12 @@ void VulkanEngine::init_scene() {
     sceneManager.init_scene({"corne", {{1, 1, -2.878}, {1, 1, 0}, 40.0f, 1.0f, 0.0f}, glm::vec3(0.0)}, []() -> std::shared_ptr<BVHNode> {
         std::vector<std::shared_ptr<Hittable>> world;
 
-        world.push_back(std::make_shared<Quad>(Quad{{2, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial{{0.12, 0.45, 0.15}, 0.0f, MaterialType::lambertian}}));
-        world.push_back(std::make_shared<Quad>(Quad{{0, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial{{0.65, 0.05, 0.05}, 0.0f, MaterialType::lambertian}}));
-        world.push_back(std::make_shared<Quad>(Quad{{1.234, 1.993, 1.194}, {-0.468, 0, 0}, {0, 0, -0.378}, GPUMaterial{{15, 15, 15}, 0.0f, MaterialType::diffuseLight}}));
-        world.push_back(std::make_shared<Quad>(Quad{{0, 0, 0}, {2, 0, 0}, {0, 0, 2}, GPUMaterial{{0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian}}));
-        world.push_back(std::make_shared<Quad>(Quad{{2, 2, 2}, {-2, 0, 0}, {0, 0, -2}, GPUMaterial{{0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian}}));
-        world.push_back(std::make_shared<Quad>(Quad{{0, 0, 2}, {2, 0, 0}, {0, 2, 0}, GPUMaterial{{0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian}}));
+        world.push_back(std::make_shared<Quad>(Quad({2, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.12, 0.45, 0.15}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {0, 2, 0}, {0, 0, 2}, GPUMaterial({0.65, 0.05, 0.05}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({1.234, 1.993, 1.194}, {-0.468, 0, 0}, {0, 0, -0.378}, GPUMaterial({15, 15, 15}, 0.0f, MaterialType::diffuseLight))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 0}, {2, 0, 0}, {0, 0, 2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({2, 2, 2}, {-2, 0, 0}, {0, 0, -2}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
+        world.push_back(std::make_shared<Quad>(Quad({0, 0, 2}, {2, 0, 0}, {0, 2, 0}, GPUMaterial({0.73, 0.73, 0.73}, 0.0f, MaterialType::lambertian))));
 
         return std::make_shared<BVHNode>(world, 0, world.size());
     });
@@ -897,13 +897,13 @@ void VulkanEngine::init_scene() {
             auto v = glm::vec3(v0.uv[1], v1.uv[1], v2.uv[1]);
 
             world.push_back(std::make_shared<Tri>(
-                Tri{v0.position - glm::vec3(0, 0.08, 0), v1.position - glm::vec3(0, 0.08, 0), v2.position - glm::vec3(0, 0.08, 0), u, v, {{0, 1, 1}, 0.0, MaterialType::lambertian}}));
+                Tri(v0.position - glm::vec3(0, 0.08, 0), v1.position - glm::vec3(0, 0.08, 0), v2.position - glm::vec3(0, 0.08, 0), u, v, {{0, 1, 1}, 0.0, MaterialType::lambertian})));
         }
 
         HittableList<Sphere> spheres;
-        spheres.add(std::make_shared<Sphere>(Sphere{{0, -2000, 0}, 2000.0f, GPUMaterial{{0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian}}));
-        spheres.add(std::make_shared<Sphere>(Sphere{{-4, 2, 0}, 2.0f, GPUMaterial{{0.7, 0.6, 0.5}, 0.05f, MaterialType::metal}}));
-        spheres.add(std::make_shared<Sphere>(Sphere{{4, 2, 0}, 2.0f, GPUMaterial{{0.7, 0.6, 0.5}, 0.05f, MaterialType::metal}}));
+        spheres.add(std::make_shared<Sphere>(Sphere({0, -2000, 0}, 2000.0f, GPUMaterial({0.5, 0.5, 0.5}, 0.0f, MaterialType::lambertian))));
+        spheres.add(std::make_shared<Sphere>(Sphere({-4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MaterialType::metal))));
+        spheres.add(std::make_shared<Sphere>(Sphere({4, 2, 0}, 2.0f, GPUMaterial({0.7, 0.6, 0.5}, 0.05f, MaterialType::metal))));
 
         world.push_back(std::make_shared<HittableList<Sphere>>(spheres));
 
@@ -977,7 +977,7 @@ void VulkanEngine::init_imgui() {
 
 
 void VulkanEngine::create_material(vk::raii::Pipeline pipeline, vk::raii::PipelineLayout layout, const std::string &name) {
-    materials[name] = Material{nullptr, std::move(pipeline), std::move(layout)};
+    materials[name] = Material(nullptr, std::move(pipeline), std::move(layout));
 }
 
 
@@ -1151,7 +1151,7 @@ void VulkanEngine::init_descriptors() {
         auto computeImage = static_cast<AllocatedImage>(allocator->createImage(computeImageInfo, computeImageAllocationInfo));
         auto samplerInfo = vkinit::sampler_create_info(vk::Filter::eLinear);
         auto computeViewInfo = vkinit::imageview_create_info(imageFormat, computeImage.image, vk::ImageAspectFlagBits::eColor);
-        computeTexture = Texture{computeImage, {device, samplerInfo}, {device, computeViewInfo}};
+        computeTexture = Texture(computeImage, {device, samplerInfo}, {device, computeViewInfo});
         // clang-format on
 
         auto spheres = currentScene.get_buffer(Hittable::Type::sphere);

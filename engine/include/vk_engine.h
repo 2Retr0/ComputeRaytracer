@@ -147,7 +147,7 @@ public:
     int fps = 0;
 
     // --- Vulkan ---
-    vk::raii::Context context{};
+    vk::raii::Context context;
     vk::raii::Instance instance = nullptr;                      // Vulkan library handle
     vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;  // Vulkan debug output handle
     vk::raii::PhysicalDevice chosenGPU = nullptr;               // GPU chosen as the default device

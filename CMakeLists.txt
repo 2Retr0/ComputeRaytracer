@@ -8,7 +8,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 set(CMAKE_CXX_FLAGS_DEBUG "-Wall -Wextra -g -fsanitize=address" CACHE STRING "")
 set(CMAKE_CXX_FLAGS_RELEASE "-Ofast -flto -fopenmp" CACHE STRING "")
 
-# VK_ICD_FILENAMES=/opt/homebrew/Cellar/molten-vk/1.2.5/share/vulkan/icd.d/MoltenVK_icd.json;VK_LAYER_PATH=/opt/homebrew/Cellar/vulkan-validationlayers/1.3.250/share/vulkan/explicit_layer.d;DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH
 find_package(Vulkan REQUIRED)
 find_package(Stb REQUIRED)
 find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{VULKAN_SDK}/Bin/ $ENV{VULKAN_SDK}/Bin32/)

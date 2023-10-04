@@ -3,7 +3,7 @@
 #include <lz4.h>
 #include <nlohmann/json.hpp>
 
-static assets::VertexFormat parse_format(const char *file) {
+assets::VertexFormat parse_format(const char *file) {
     if (strcmp(file, "PNCV_F32") == 0)
         return assets::VertexFormat::PNCV_F32;
     if (strcmp(file, "P32N8C8V16") == 0)
