@@ -1,6 +1,6 @@
 ﻿# CMakeList.txt : CMake project for vulkan_guide, include source and define project specific logic here.
 cmake_minimum_required(VERSION 3.8)
-project("VulkanTest2")
+project("ComputeRaytracer")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")

@@ -3,7 +3,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_executable(baker "asset_main.cpp")
 
-set_property(TARGET baker PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:VulkanTest2>")
+set_property(TARGET baker PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:ComputeRaytracer>")
 
 target_include_directories(baker PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_include_directories(baker PRIVATE ${Stb_INCLUDE_DIR})

@@ -55,7 +55,7 @@ void VulkanEngine::init() {
         // functionality (includes basic input events like keys or mouse).
         SDL_Init(SDL_INIT_VIDEO);
 
-        auto windowTitle = std::string("VulkanTest2") + (useValidationLayers ? " (DEBUG)" : ""); // NOLINT
+        auto windowTitle = std::string("ComputeRaytracer") + (useValidationLayers ? " (DEBUG)" : ""); // NOLINT
         // Create a blank SDL window for our application
         window = SDL_CreateWindow(
             windowTitle.c_str(),                   // Window title
@@ -115,7 +115,7 @@ void VulkanEngine::init_vulkan() {
     vkb::InstanceBuilder builder;
 
     // Make the Vulkan instance, with basic debug features
-    auto vkbInstance = builder.set_app_name("VulkanTest2")
+    auto vkbInstance = builder.set_app_name("ComputeRaytracer")
        .request_validation_layers(useValidationLayers)
        .require_api_version(1, 1, 0)
        .use_default_debug_messenger()
@@ -1546,7 +1546,7 @@ void VulkanEngine::run() {
         ImGui::NewFrame();
 
         // ImGui commands--we can call ImGui functions between `Imgui::NewFrame()` and `draw()`
-        ImGui::Begin("VulkanTest2");
+        ImGui::Begin("ComputeRaytracer");
 
         if (ImGui::BeginTable("Properties", 2)) {
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 100.0f);

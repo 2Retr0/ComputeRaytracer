@@ -17,7 +17,7 @@ vk::raii::Pipeline PipelineBuilder::build_graphics_pipeline(const vk::raii::Devi
         // Build the actual pipeline. We will use all the info structs we have been writing into this one for creation.
     // clang-format off
     auto pipelineInfo = vk::GraphicsPipelineCreateInfo()
-        .setStageCount(shaderStages.size())
+        .setStageCount((uint32_t) shaderStages.size())
         .setPStages(shaderStages.data())
         .setPVertexInputState(&vertexInputInfo)
         .setPInputAssemblyState(&inputAssembly)
